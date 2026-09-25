@@ -8,8 +8,21 @@ from anydecision.artifacts.saver import (
 )
 from anydecision.backends.base import BaseBackend, ModelMetadata
 from anydecision.bias.templates import PromptTemplate
+from anydecision.calibration.active import (
+    ActiveCalibrationBenchmark,
+    ActiveCalibrationReport,
+    ActiveCalibrator,
+    ActiveSelectionCriterion,
+)
 from anydecision.calibration.base import BaseCalibrator
 from anydecision.calibration.conformal import ConformalPredictor
+from anydecision.calibration.drift import (
+    CalibrationDriftMonitor,
+    DistributionShiftEvaluator,
+    DistributionShiftReport,
+    DistributionShiftType,
+    DriftAlert,
+)
 from anydecision.calibration.metrics import (
     compute_adaptive_ece,
     compute_brier_score,
@@ -50,14 +63,23 @@ from anydecision.theory.utility import UtilityMatrix
 __all__ = [
     "__version__",
     "AbstentionPolicy",
+    "ActiveCalibrationBenchmark",
+    "ActiveCalibrationReport",
+    "ActiveCalibrator",
+    "ActiveSelectionCriterion",
     "AdaptiveComputeConfig",
     "AdaptiveComputeRouter",
     "AnswerType",
     "BaseBackend",
     "BaseCalibrator",
+    "CalibrationDriftMonitor",
     "CalibrationReport",
     "CompiledExecutionPlan",
     "ConformalPredictor",
+    "DistributionShiftEvaluator",
+    "DistributionShiftReport",
+    "DistributionShiftType",
+    "DriftAlert",
     "Decision",
     "DecisionCompiler",
     "DecisionEngine",

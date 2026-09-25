@@ -74,6 +74,8 @@ class DecisionEngine:
         self.abstention_controller = AbstentionController(self.policy.abstention)
         self.ood_detector = OODDetector()
         self.adapter = OnlineAdapter()
+        from anydecision.calibration.drift import CalibrationDriftMonitor
+        self.drift_monitor = CalibrationDriftMonitor()
 
     def decide(
         self,
@@ -418,6 +420,22 @@ class DecisionEngine:
             question_id=question.id,
             layers=layers,
         )
+
+    def suggest_calibration_examples(
+        self,
+        pool: Sequence[Question],
+        budget: int = 25,
+        criterion: str = "hybrid",
+    ) -> List[Question]:
+        """Identify and rank the most informative calibration examples from an unlabeled pool.
+
+        Uses active learning information metrics (entropy, margin proximity, template disagreement,
+        and OOD scores) to minimize annotation cost.
+        """
+        from anydecision.calibration.active import ActiveCalibrator, ActiveSelectionCriterion
+        crit = ActiveSelectionCriterion(criterion) if isinstance(criterion, str) else criterion
+        selector = ActiveCalibrator(criterion=crit)
+        return selector.suggest_calibration_examples(pool=pool, engine=self, budget=budget)
 
     def decide_adaptive(
         self,
