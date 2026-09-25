@@ -32,7 +32,6 @@ class PlattScaling(BaseCalibrator):
 
         self.classifier = LogisticRegression(
             C=self.c_reg,
-            multi_class="multinomial",
             solver="lbfgs",
             max_iter=1000,
         )

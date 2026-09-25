@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 from pydantic import BaseModel, Field
 
-from anydecision.core.question import Question
+if TYPE_CHECKING:
+    from anydecision.core.question import Question
 
 
 class PromptTemplate(BaseModel):

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "anydecision_version": "0.2.0",
+  "model": "mock",
+  "model_revision": "v1.0.0-mock",
+  "tokenizer_revision": "v1.0.0-mock",
+  "question_schema": "customer_escalation_v1",
+  "backend": "mock",
+  "head": "temperature_scaling",
+  "calibration": {
+    "type": "temperature_scaling",
+    "temperature": 9.999996101689481,
+    "fitted": true
+  },
+  "training_data_hash": "0000000000000000",
+  "created_at": "2026-09-25T11:33:11.804812+00:00",
+  "integrity": {
+    "sha256": "d006689508b94823e0747ab56c7bfa72acf85e61b176efb99933147b25075c00"
+  }
+}
