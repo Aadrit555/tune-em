@@ -104,6 +104,27 @@ class DecisionPolicy(BaseModel):
         default=0.10,
         description="Error coverage for conformal prediction sets (1 - alpha coverage)."
     )
+    # Decision Theory & Action Economics
+    utility_matrix: Optional[Any] = Field(
+        default=None,
+        description="Optional UtilityMatrix specifying action rewards/costs U(a, y)."
+    )
+    max_risk: Optional[float] = Field(
+        default=None,
+        description="Maximum tolerable posterior risk limit before abstaining or escalating."
+    )
+    min_coverage: Optional[float] = Field(
+        default=None,
+        description="Target minimum dataset coverage constraint."
+    )
+    max_latency_ms: Optional[float] = Field(
+        default=None,
+        description="Latency SLA budget in milliseconds."
+    )
+    allow_escalation: bool = Field(
+        default=True,
+        description="Whether decision engine can escalate to human review under high regret or risk."
+    )
     # Performance & Diagnostics
     use_prefix_cache: bool = Field(
         default=True,

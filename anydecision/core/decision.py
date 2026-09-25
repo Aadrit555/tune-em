@@ -64,6 +64,31 @@ class Decision(BaseModel):
         default=None,
         description="Probability-weighted expected value for numeric score or ordinal questions."
     )
+    # Decision Theory & Action Economics
+    selected_action: Optional[str] = Field(
+        default=None,
+        description="Optimal operational action maximizing Expected Utility EU(a) = sum_y P(y|x) U(a, y)."
+    )
+    expected_utilities: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Mapping of action -> Expected Utility EU(a)."
+    )
+    optimal_action_utility: Optional[float] = Field(
+        default=None,
+        description="Maximum expected utility achieved by the selected action."
+    )
+    action_regret: Optional[float] = Field(
+        default=None,
+        description="Regret or utility gap between top-1 and second-best action."
+    )
+    escalated: bool = Field(
+        default=False,
+        description="Whether decision policy triggered escalation to human review."
+    )
+    escalation_reason: Optional[str] = Field(
+        default=None,
+        description="Diagnostic explanation if escalated to human review."
+    )
     diagnostics: Optional[Diagnostics] = Field(
         default=None,
         description="In-depth observable decision diagnostics and system metrics."

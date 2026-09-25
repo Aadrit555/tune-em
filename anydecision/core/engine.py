@@ -37,6 +37,8 @@ from anydecision.core.types import (
     ReadoutStrategy,
 )
 from anydecision.scoring.normalization import compute_entropy, normalize_log_probabilities
+from anydecision.theory.compiler import CompiledExecutionPlan, DecisionCompiler
+from anydecision.theory.utility import UtilityMatrix
 from anydecision.uncertainty.abstention import AbstentionController
 from anydecision.uncertainty.entropy import normalized_entropy
 from anydecision.uncertainty.ood import OODDetector
@@ -84,6 +86,9 @@ class DecisionEngine:
         num_permutations: Optional[int] = None,
         trace: Optional[bool] = None,
         scoring_method: str = "length_normalized",
+        actions: Optional[Dict[str, float]] = None,
+        utility_matrix: Optional[UtilityMatrix] = None,
+        policy: Optional[DecisionPolicy] = None,
     ) -> Decision:
         """Execute a typed decision for a given question.
 
@@ -97,15 +102,19 @@ class DecisionEngine:
             num_permutations: Number of option permutations for L1 debiasing.
             trace: If True, attach step-by-step DecisionTrace to output.
             scoring_method: Multi-token sequence scoring algorithm.
+            actions: Dict of action -> intrinsic cost (e.g. {'approve': 0, 'reject': -10, 'human_review': -2}).
+            utility_matrix: Explicit UtilityMatrix defining rewards/penalties U(a, y).
+            policy: Optional DecisionPolicy overriding engine defaults.
 
         Returns:
-            Strongly typed Decision object.
+            Strongly typed Decision object with optimal action and expected utilities.
         """
         start_time = time.perf_counter()
+        active_policy = policy or self.policy
         target_level = (
             DecisionLevel(level)
             if isinstance(level, str)
-            else (level or self.policy.level)
+            else (level or active_policy.level)
         )
 
         enable_trace = trace if trace is not None else self.policy.enable_trace
@@ -297,14 +306,43 @@ class DecisionEngine:
             ood_warning=ood_result.warning,
         )
 
+        # Decision-Theoretic Expected Utility Optimization
+        effective_utility_matrix = utility_matrix or (
+            UtilityMatrix.from_action_costs(actions, question.option_keys())
+            if actions is not None
+            else getattr(active_policy, "utility_matrix", None)
+        )
+
+        selected_act: Optional[str] = None
+        expected_utilities: Dict[str, float] = {}
+        optimal_eu: Optional[float] = None
+        action_regret: Optional[float] = None
+        is_escalated: bool = False
+        escalation_reason_str: Optional[str] = None
+
+        if effective_utility_matrix is not None:
+            best_act, best_eu, act_regret, eus = effective_utility_matrix.select_optimal_action(effective_probs)
+            selected_act = best_act
+            expected_utilities = eus
+            optimal_eu = best_eu
+            action_regret = act_regret
+
+            # Check if escalation / human review was triggered
+            if best_act in ("human_review", "escalate", "manual_review"):
+                is_escalated = True
+                escalation_reason_str = (
+                    f"Decision-Theoretic: Action '{best_act}' maximizes expected utility ({best_eu:.2f})"
+                )
+
         if decision_trace:
             decision_trace.add_step(
                 "decision_finalized",
-                "Constructed final typed decision",
+                "Constructed final typed decision and action selection",
                 answer=final_answer,
                 confidence=top_confidence,
                 abstained=should_abstain,
-                abstain_reason=abstain_reason,
+                selected_action=selected_act,
+                optimal_utility=optimal_eu,
             )
 
         return Decision(
@@ -320,8 +358,30 @@ class DecisionEngine:
             risk=posterior_risk,
             prediction_set=prediction_set,
             expected_value=expected_val,
+            selected_action=selected_act,
+            expected_utilities=expected_utilities,
+            optimal_action_utility=optimal_eu,
+            action_regret=action_regret,
+            escalated=is_escalated,
+            escalation_reason=escalation_reason_str,
             diagnostics=diagnostics,
             trace=decision_trace,
+        )
+
+    def compile(
+        self,
+        question: Question,
+        policy: Optional[DecisionPolicy] = None,
+    ) -> CompiledExecutionPlan:
+        """Compile a Question and DecisionPolicy into an inspectable, optimized execution plan."""
+        active_policy = policy or self.policy
+        calib_name = getattr(self.calibrator, "type", None) if self.calibrator else None
+        return DecisionCompiler.compile_plan(
+            question=question,
+            policy=active_policy,
+            backend_name=self.metadata.backend_name,
+            calibration_name=calib_name,
+            has_utility_matrix=active_policy.utility_matrix is not None,
         )
 
     def batch_decide(

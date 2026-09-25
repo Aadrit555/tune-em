@@ -31,6 +31,9 @@ from anydecision.core.types import (
     ReadoutStrategy,
 )
 
+from anydecision.theory.compiler import CompiledExecutionPlan, DecisionCompiler
+from anydecision.theory.utility import UtilityMatrix
+
 __all__ = [
     "__version__",
     "AbstentionPolicy",
@@ -38,8 +41,10 @@ __all__ = [
     "BaseBackend",
     "BaseCalibrator",
     "CalibrationReport",
+    "CompiledExecutionPlan",
     "ConformalPredictor",
     "Decision",
+    "DecisionCompiler",
     "DecisionEngine",
     "DecisionLevel",
     "DecisionPolicy",
@@ -51,6 +56,7 @@ __all__ = [
     "Question",
     "ReadoutStrategy",
     "TemperatureScaling",
+    "UtilityMatrix",
     "VectorScaling",
     "compute_adaptive_ece",
     "compute_brier_score",
