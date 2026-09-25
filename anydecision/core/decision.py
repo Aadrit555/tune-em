@@ -93,6 +93,27 @@ class Decision(BaseModel):
         default=None,
         description="In-depth observable decision diagnostics and system metrics."
     )
+    # Adaptive Compute Accounting
+    compute_path: List[str] = Field(
+        default_factory=lambda: ["L0"],
+        description="Sequence of levels/readouts traversed during inference (e.g. ['L0'], ['L0', 'L1', 'L2'])."
+    )
+    backend_calls: int = Field(
+        default=1,
+        description="Total number of backend model forward passes required for this decision."
+    )
+    layers_executed: Optional[int] = Field(
+        default=None,
+        description="Total or maximum layer depth executed."
+    )
+    tokens_processed: int = Field(
+        default=0,
+        description="Total number of input/candidate tokens processed."
+    )
+    latency_ms: float = Field(
+        default=0.0,
+        description="Total execution latency in milliseconds."
+    )
     trace: Optional[DecisionTrace] = Field(
         default=None,
         description="Step-by-step execution trace when requested."

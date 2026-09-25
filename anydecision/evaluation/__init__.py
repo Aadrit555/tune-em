@@ -15,6 +15,12 @@ from anydecision.evaluation.datasets import (
     create_customer_escalation_benchmark,
     create_topic_categorization_benchmark,
 )
+from anydecision.evaluation.economics import (
+    DecisionEconomicsEvaluator,
+    DecisionEconomicsReport,
+    EconomicsConfig,
+    LevelComparisonRecord,
+)
 from anydecision.evaluation.visualizer import ResearchVisualizer
 
 __all__ = [
@@ -24,9 +30,14 @@ __all__ = [
     "BenchmarkResult",
     "BenchmarkRunner",
     "BenchmarkSample",
+    "DecisionEconomicsEvaluator",
+    "DecisionEconomicsReport",
+    "EconomicsConfig",
+    "LevelComparisonRecord",
     "ResearchVisualizer",
     "create_agent_safety_tasks",
     "create_customer_escalation_benchmark",
     "create_topic_categorization_benchmark",
 ]
+
 

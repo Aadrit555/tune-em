@@ -89,6 +89,8 @@ class DecisionEngine:
         actions: Optional[Dict[str, float]] = None,
         utility_matrix: Optional[UtilityMatrix] = None,
         policy: Optional[DecisionPolicy] = None,
+        adaptive: bool = False,
+        adaptive_config: Optional[Any] = None,
     ) -> Decision:
         """Execute a typed decision for a given question.
 
@@ -105,10 +107,28 @@ class DecisionEngine:
             actions: Dict of action -> intrinsic cost (e.g. {'approve': 0, 'reject': -10, 'human_review': -2}).
             utility_matrix: Explicit UtilityMatrix defining rewards/penalties U(a, y).
             policy: Optional DecisionPolicy overriding engine defaults.
+            adaptive: If True, dynamically routes through L0 -> L1 -> L2 with early exit.
+            adaptive_config: Optional AdaptiveComputeConfig instance.
 
         Returns:
             Strongly typed Decision object with optimal action and expected utilities.
         """
+        if adaptive:
+            return self.decide_adaptive(
+                question=question,
+                policy=policy,
+                adaptive_config=adaptive_config,
+                actions=actions,
+                utility_matrix=utility_matrix,
+                min_confidence=min_confidence,
+                target_error=target_error,
+                allow_abstain=allow_abstain,
+                templates=templates,
+                num_permutations=num_permutations,
+                trace=trace,
+                scoring_method=scoring_method,
+            )
+
         start_time = time.perf_counter()
         active_policy = policy or self.policy
         target_level = (
@@ -121,6 +141,7 @@ class DecisionEngine:
         decision_trace = (
             DecisionTrace(question_id=question.id) if enable_trace else None
         )
+
 
         if decision_trace:
             decision_trace.add_step(
@@ -368,7 +389,40 @@ class DecisionEngine:
             trace=decision_trace,
         )
 
+    def decide_adaptive(
+        self,
+        question: Question,
+        policy: Optional[DecisionPolicy] = None,
+        adaptive_config: Optional[Any] = None,
+        actions: Optional[Dict[str, float]] = None,
+        utility_matrix: Optional[UtilityMatrix] = None,
+        **kwargs: Any,
+    ) -> Decision:
+        """Execute decision adaptively using confidence-triggered early exit (L0 -> L1 -> L2 -> Abstain).
+
+        Dynamically evaluates minimal compute required to achieve target confidence,
+        respecting latency SLAs and compute budgets.
+        """
+        from anydecision.adaptive.router import AdaptiveComputeConfig, AdaptiveComputeRouter
+        if isinstance(adaptive_config, AdaptiveComputeConfig):
+            cfg = adaptive_config
+        elif isinstance(adaptive_config, dict):
+            cfg = AdaptiveComputeConfig(**adaptive_config)
+        else:
+            cfg = AdaptiveComputeConfig()
+
+        router = AdaptiveComputeRouter(config=cfg)
+        return router.decide_adaptive(
+            engine=self,
+            question=question,
+            policy=policy,
+            actions=actions,
+            utility_matrix=utility_matrix,
+            **kwargs,
+        )
+
     def compile(
+
         self,
         question: Question,
         policy: Optional[DecisionPolicy] = None,

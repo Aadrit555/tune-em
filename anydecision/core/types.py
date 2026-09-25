@@ -58,6 +58,9 @@ class Diagnostics(BaseModel):
     option_order_sensitivity: float = Field(default=0.0, description="Permutation TV distance / variance [0, 1].")
     cache_usage: Dict[str, Any] = Field(default_factory=dict, description="Prefix cache metrics.")
     number_of_backend_calls: int = Field(default=1, description="Total backend forward calls made.")
+    compute_path: List[str] = Field(default_factory=lambda: ["L0"], description="Sequence of levels/readouts executed.")
+    layers_executed: Optional[int] = Field(default=None, description="Number of model layers executed.")
+    tokens_processed: int = Field(default=0, description="Total tokens processed across all forward passes.")
     ood_score: Optional[float] = Field(default=None, description="Out-of-distribution distance/entropy diagnostic.")
     ood_warning: Optional[str] = Field(default=None, description="OOD diagnostic caution message if triggered.")
 

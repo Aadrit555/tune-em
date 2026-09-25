@@ -1,6 +1,7 @@
 """anydecision: A typed, uncertainty-aware decision runtime for open-weight LLMs."""
 
 from anydecision._version import __version__
+from anydecision.adaptive.router import AdaptiveComputeConfig, AdaptiveComputeRouter
 from anydecision.artifacts.saver import (
     load_calibration_artifact,
     save_calibration_artifact,
@@ -37,6 +38,8 @@ from anydecision.theory.utility import UtilityMatrix
 __all__ = [
     "__version__",
     "AbstentionPolicy",
+    "AdaptiveComputeConfig",
+    "AdaptiveComputeRouter",
     "AnswerType",
     "BaseBackend",
     "BaseCalibrator",
