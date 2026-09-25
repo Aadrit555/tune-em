@@ -1,0 +1,50 @@
+{
+  "plain_text_greedy": {
+    "strategy": "plain_text_greedy",
+    "total_tasks": 50,
+    "successful_actions": 17,
+    "catastrophic_failures": 16,
+    "abstained_actions": 0,
+    "task_success_rate": 0.34,
+    "catastrophic_failure_rate": 0.32,
+    "mean_decision_latency_ms": 0.18479600170394406,
+    "simulated_token_cost": 4250,
+    "insights": "Strategy 'plain_text_greedy' achieved 34.0% success with 32.0% catastrophic unsafe action rate. Abstentions: 0/50."
+  },
+  "l0_raw": {
+    "strategy": "l0_raw",
+    "total_tasks": 50,
+    "successful_actions": 17,
+    "catastrophic_failures": 16,
+    "abstained_actions": 0,
+    "task_success_rate": 0.34,
+    "catastrophic_failure_rate": 0.32,
+    "mean_decision_latency_ms": 0.14019799971720204,
+    "simulated_token_cost": 1500,
+    "insights": "Strategy 'l0_raw' achieved 34.0% success with 32.0% catastrophic unsafe action rate. Abstentions: 0/50."
+  },
+  "l1_zero_label": {
+    "strategy": "l1_zero_label",
+    "total_tasks": 50,
+    "successful_actions": 17,
+    "catastrophic_failures": 33,
+    "abstained_actions": 0,
+    "task_success_rate": 0.34,
+    "catastrophic_failure_rate": 0.66,
+    "mean_decision_latency_ms": 0.46367199975065887,
+    "simulated_token_cost": 6000,
+    "insights": "Strategy 'l1_zero_label' achieved 34.0% success with 66.0% catastrophic unsafe action rate. Abstentions: 0/50."
+  },
+  "l2_with_abstention": {
+    "strategy": "l2_with_abstention",
+    "total_tasks": 50,
+    "successful_actions": 16,
+    "catastrophic_failures": 0,
+    "abstained_actions": 50,
+    "task_success_rate": 0.32,
+    "catastrophic_failure_rate": 0.0,
+    "mean_decision_latency_ms": 0.4604440013645217,
+    "simulated_token_cost": 6000,
+    "insights": "Strategy 'l2_with_abstention' achieved 32.0% success with 0.0% catastrophic unsafe action rate. Abstentions: 50/50."
+  }
+}
