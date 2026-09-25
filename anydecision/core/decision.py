@@ -60,6 +60,18 @@ class Decision(BaseModel):
         default=None,
         description="Calibrated candidate prediction set with coverage guarantees (e.g. from conformal prediction)."
     )
+    risk_guarantee: Optional[float] = Field(
+        default=None,
+        description="Formal certified finite-sample upper bound on expected risk under selective prediction."
+    )
+    guarantee_type: Optional[str] = Field(
+        default=None,
+        description="'conformal_exact' (distribution-free finite sample bound) or 'empirical_approximate'."
+    )
+    selected: Optional[bool] = Field(
+        default=None,
+        description="Conformal risk control selection flag: True if passed certified risk threshold."
+    )
     expected_value: Optional[float] = Field(
         default=None,
         description="Probability-weighted expected value for numeric score or ordinal questions."

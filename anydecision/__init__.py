@@ -23,6 +23,10 @@ from anydecision.calibration.drift import (
     DistributionShiftType,
     DriftAlert,
 )
+from anydecision.calibration.hierarchical import (
+    HierarchicalCalibrator,
+    HierarchicalDiagnostics,
+)
 from anydecision.calibration.metrics import (
     compute_adaptive_ece,
     compute_brier_score,
@@ -30,6 +34,10 @@ from anydecision.calibration.metrics import (
     compute_nll,
 )
 from anydecision.calibration.report import CalibrationReport
+from anydecision.calibration.selective_conformal import (
+    SelectiveConformalPredictor,
+    SelectiveConformalResult,
+)
 from anydecision.calibration.temperature import TemperatureScaling
 from anydecision.calibration.vector import VectorScaling
 from anydecision.core.decision import Decision
@@ -91,6 +99,8 @@ __all__ = [
     "FusionExperimentReport",
     "FusionModelCard",
     "FusionStrategy",
+    "HierarchicalCalibrator",
+    "HierarchicalDiagnostics",
     "LayerCheckpoint",
     "LayerTrajectoryAnalyzer",
     "LayerTrajectoryResult",
@@ -100,6 +110,8 @@ __all__ = [
     "PromptTemplate",
     "Question",
     "ReadoutStrategy",
+    "SelectiveConformalPredictor",
+    "SelectiveConformalResult",
     "TemperatureScaling",
     "UtilityMatrix",
     "VectorScaling",

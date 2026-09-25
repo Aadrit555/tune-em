@@ -94,6 +94,9 @@ class DecisionEngine:
         adaptive: bool = False,
         adaptive_config: Optional[Any] = None,
         track_layer_trajectory: bool = False,
+        risk_limit: Optional[float] = None,
+        coverage_target: Optional[float] = None,
+        group_id: Optional[str] = None,
     ) -> Decision:
         """Execute a typed decision for a given question.
 
@@ -234,7 +237,10 @@ class DecisionEngine:
 
         if target_level == DecisionLevel.L2:
             if self.calibrator is not None:
-                calibrated_probs = self.calibrator.calibrate_dict(raw_probs)
+                if getattr(self.calibrator, "type", "") == "hierarchical":
+                    calibrated_probs = self.calibrator.calibrate_dict(raw_probs, group_id=group_id, question_id=question.id)
+                else:
+                    calibrated_probs = self.calibrator.calibrate_dict(raw_probs)
                 is_calibrated = True
                 method_str = getattr(self.calibrator, "type", "calibrated")
             elif self.adapter.calibrator.fitted:
@@ -275,9 +281,30 @@ class DecisionEngine:
 
         final_answer = None if should_abstain else top_answer
 
-        # Prediction set (conformal or selective)
+        # Prediction set & Conformal Risk Control
         prediction_set: Optional[List[str]] = None
-        if self.conformal_predictor is not None and self.conformal_predictor.fitted:
+        risk_guarantee_val: Optional[float] = None
+        guarantee_type_val: Optional[str] = None
+        is_selected_val: Optional[bool] = None
+
+        if risk_limit is not None or coverage_target is not None:
+            from anydecision.calibration.selective_conformal import SelectiveConformalPredictor
+            crc = SelectiveConformalPredictor(
+                risk_limit=risk_limit or 0.05,
+                min_coverage=coverage_target or 0.70,
+            )
+            crc_res = crc.predict(effective_probs, risk_limit=risk_limit)
+            prediction_set = crc_res.prediction_set
+            risk_guarantee_val = crc_res.risk_guarantee
+            guarantee_type_val = crc_res.guarantee_type
+            is_selected_val = crc_res.selected
+
+            if not crc_res.selected and active_abstention_policy.allow_abstain:
+                should_abstain = True
+                abstain_reason = "conformal_risk_limit_exceeded"
+                final_answer = None
+
+        elif self.conformal_predictor is not None and self.conformal_predictor.fitted:
             k_list = question.option_keys()
             prob_arr = np.array([effective_probs[k] for k in k_list])
             prediction_set = self.conformal_predictor.predict_set(prob_arr, k_list)
@@ -388,6 +415,9 @@ class DecisionEngine:
             reason=abstain_reason,
             risk=posterior_risk,
             prediction_set=prediction_set,
+            risk_guarantee=risk_guarantee_val,
+            guarantee_type=guarantee_type_val,
+            selected=is_selected_val,
             expected_value=expected_val,
             selected_action=selected_act,
             expected_utilities=expected_utilities,
