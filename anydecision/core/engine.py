@@ -471,3 +471,4 @@ class DecisionEngine:
             expected_revision=self.metadata.model_revision if verify_model else None,
         )
         self.calibrator = calibrator
+

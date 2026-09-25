@@ -5,3 +5,4 @@ from anydecision import __all__ as _anydecision_all
 from anydecision import __version__
 
 __all__ = _anydecision_all
+

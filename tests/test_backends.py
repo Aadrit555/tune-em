@@ -33,3 +33,4 @@ def test_mock_backend_sequence_logprobs():
 def test_get_backend_factory():
     b_mock = get_backend("mock")
     assert isinstance(b_mock, MockBackend)
+

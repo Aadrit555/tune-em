@@ -66,3 +66,4 @@ class ObservationBuffer:
         for obs in self.observations:
             h.update(f"{obs.question_id}:{obs.label}".encode("utf-8"))
         return h.hexdigest()
+

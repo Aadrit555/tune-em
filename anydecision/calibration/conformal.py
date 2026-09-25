@@ -84,3 +84,4 @@ class ConformalPredictor:
         inst.n_cal = data.get("n_cal", 0)
         inst.fitted = data.get("fitted", True)
         return inst
+

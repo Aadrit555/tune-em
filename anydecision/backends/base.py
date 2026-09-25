@@ -141,3 +141,4 @@ class BaseBackend(ABC):
         return await loop.run_in_executor(
             None, self.sequence_logprobs, prompt, candidate_strings, scoring_method
         )
+

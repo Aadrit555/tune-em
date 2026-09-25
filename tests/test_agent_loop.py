@@ -18,3 +18,4 @@ def test_agent_workflow_evaluator():
     report_abstain = evaluator.evaluate_strategy(tasks, strategy="l2_with_abstention")
     assert report_abstain.total_tasks == 6
     assert report_abstain.abstained_actions >= 0
+

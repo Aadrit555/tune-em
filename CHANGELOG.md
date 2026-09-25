@@ -41,3 +41,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Comprehensive Benchmarks & Tests**:
   - 48 automated unit and integration tests passing at 100%.
   - Agent workflow safety benchmark comparing plain LLM vs calibrated abstention.
+

@@ -53,3 +53,4 @@ def test_extract_candidate_logprobs():
     lps = extract_candidate_logprobs_from_logits(logits, mapping)
     assert "yes" in lps and "no" in lps
     assert lps["yes"] > lps["no"]
+

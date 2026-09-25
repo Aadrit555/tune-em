@@ -30,3 +30,4 @@ class ArtifactManifest(BaseModel):
         description="ISO 8601 UTC timestamp."
     )
     integrity: IntegrityBlock = Field(description="SHA-256 checksum block.")
+

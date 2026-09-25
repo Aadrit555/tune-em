@@ -17,3 +17,4 @@ def test_reproducibility_manifest():
     assert manifest.random_seed == 42
     assert manifest.platform != ""
     assert manifest.python_version != ""
+

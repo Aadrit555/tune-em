@@ -42,3 +42,4 @@ def test_metrics_endpoint():
     res = client.get("/metrics")
     assert res.status_code == 200
     assert "decision_count" in res.json()
+

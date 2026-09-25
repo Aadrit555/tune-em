@@ -32,3 +32,4 @@ def extract_candidate_logprobs_from_logits(
         key: float(vocab_logprobs[token_id])
         for key, token_id in candidate_token_ids.items()
     }
+

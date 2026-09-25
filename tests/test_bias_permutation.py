@@ -48,3 +48,4 @@ def test_prompt_template_rendering():
     assert "Choose color" in rendered
     assert "red" in rendered
     assert "blue" in rendered
+

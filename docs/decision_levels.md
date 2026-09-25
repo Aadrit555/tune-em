@@ -54,3 +54,4 @@ engine.calibrate(calibration_dataset, method="temperature")
 # 2. Evaluate with calibrated probabilities
 decision = engine.decide(question, level="L2", target_error=0.05)
 ```
+

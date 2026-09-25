@@ -56,3 +56,4 @@ class SequenceScorer:
     def score_batch(self, candidate_token_logprobs: List[Sequence[float]]) -> List[float]:
         """Score multiple candidate token sequences."""
         return [self.score_tokens(logp_seq) for logp_seq in candidate_token_logprobs]
+

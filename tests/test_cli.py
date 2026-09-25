@@ -33,3 +33,4 @@ def test_cli_benchmark():
     ])
     assert res.exit_code == 0
     assert "Benchmark Results" in res.output
+

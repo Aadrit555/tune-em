@@ -76,3 +76,4 @@ class DecisionTrace(BaseModel):
 
     def add_step(self, step_name: str, description: str, **data: Any) -> None:
         self.steps.append(TraceStep(step_name=step_name, description=description, data=data))
+

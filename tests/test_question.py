@@ -48,3 +48,4 @@ def test_question_deterministic_id():
     id1 = Question.generate_id("Is this valid?", ["yes", "no"])
     id2 = Question.generate_id("Is this valid?", ["no", "yes"])
     assert id1 == id2
+

@@ -150,3 +150,4 @@ class MockBackend(BaseBackend):
             self.sequence_logprobs(p, c, scoring_method=scoring_method)
             for p, c in zip(prompts, candidate_strings_list)
         ]
+

@@ -127,3 +127,4 @@ class VLLMBackend(BaseBackend):
         norm_scores = scores - log_z
 
         return {k: float(s) for k, s in zip(keys, norm_scores)}
+

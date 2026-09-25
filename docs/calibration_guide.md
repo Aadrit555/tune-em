@@ -36,3 +36,4 @@ Modern instruction-tuned and RLHF-aligned open-weight models suffer from severe 
 - **Brier Score**: Multi-class mean squared error: $\frac{1}{N}\sum_{n} \|p_n - y_n\|_2^2$.
 - **Negative Log-Likelihood (NLL)**: Proper scoring rule punishing confident wrong guesses.
 - **Selective Accuracy & Coverage**: Accuracy evaluated only on samples where model did not abstain.
+

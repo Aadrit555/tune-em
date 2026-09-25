@@ -67,3 +67,4 @@ def test_artifact_tamper_detection(tmp_path: Path):
 
     with pytest.raises(IntegrityError):
         load_calibration_artifact(filepath, expected_model="test-model")
+

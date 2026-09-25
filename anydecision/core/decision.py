@@ -89,3 +89,4 @@ class Decision(BaseModel):
             f"Decision: '{self.answer}' (confidence: {self.confidence:.2%}, "
             f"uncertainty: {self.uncertainty:.3f}, level: {self.level}, method: {self.method})"
         )
+

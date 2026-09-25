@@ -36,3 +36,4 @@ def test_synchronous_batch_decide():
     assert len(results) == 4
     for r in results:
         assert r.answer in ("billing", "tech", "sales")
+

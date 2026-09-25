@@ -47,3 +47,4 @@ def test_online_adapter_observe():
         )
     assert updated is True
     assert adapter.updates_count == 1
+

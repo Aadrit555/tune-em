@@ -66,3 +66,4 @@ def aggregate_distributions(
         agg = agg / total
 
     return {k: float(v) for k, v in zip(keys, agg)}
+

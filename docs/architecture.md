@@ -78,3 +78,4 @@ $$\text{Score}_{\text{norm}} = \frac{\sum_{t=1}^L \log p(w_t \mid x, w_{<t})}{\l
 
 ### 3. Selective Abstention & Conformal Prediction Sets
 Applications can specify `target_error` or `min_confidence`. If posterior risk exceeds tolerance, the engine returns `abstained=True` and records diagnostic reasons. In addition, split conformal prediction provides prediction sets with $(1-\alpha)$ coverage guarantees.
+

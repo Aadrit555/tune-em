@@ -36,3 +36,4 @@ jobs:
       - name: Run quickstart verification
         run: |
           python examples/quickstart.py
+

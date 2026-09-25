@@ -151,3 +151,4 @@ class BenchmarkRunner:
                 "reliability_diagram": report.reliability_diagram,
             },
         )
+

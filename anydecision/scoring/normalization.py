@@ -48,3 +48,4 @@ def compute_entropy(probabilities: Sequence[float]) -> float:
         if p > 1e-12:
             entropy -= p * math.log(p)
     return float(entropy)
+

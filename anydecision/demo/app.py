@@ -195,3 +195,4 @@ def launch_demo(server_port: int = 7860, share: bool = False) -> None:
 
 if __name__ == "__main__":
     launch_demo()
+

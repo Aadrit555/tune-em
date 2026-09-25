@@ -53,3 +53,4 @@ class BaseCalibrator(ABC):
     def from_dict(cls, data: Dict[str, Any]) -> BaseCalibrator:
         """Instantiate calibrator from serialized dictionary."""
         pass
+

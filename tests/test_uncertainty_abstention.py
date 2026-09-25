@@ -56,3 +56,4 @@ def test_ood_diagnostics():
     diag = detector.diagnose(probabilities={"a": 0.25, "b": 0.25, "c": 0.25, "d": 0.25})
     assert diag.is_shift_suspected is True
     assert diag.warning is not None
+

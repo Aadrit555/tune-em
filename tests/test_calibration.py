@@ -125,3 +125,4 @@ def test_calibration_metrics_and_report():
     report = CalibrationReport.evaluate(probs, labels)
     assert report.accuracy == 1.0
     assert "STATISTICAL CALIBRATION REPORT" in report.summary()
+

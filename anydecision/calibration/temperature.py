@@ -70,3 +70,4 @@ class TemperatureScaling(BaseCalibrator):
         inst = cls(temperature=data.get("temperature", 1.0))
         inst.fitted = data.get("fitted", True)
         return inst
+

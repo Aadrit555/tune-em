@@ -35,3 +35,4 @@ scratch/
 *.pt
 *.bin
 !anydecision/tests/data/*.safetensors
+

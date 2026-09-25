@@ -65,3 +65,4 @@ def compute_mutual_information(
     # Mutual Information = Total - Expected
     mi = max(0.0, total_entropy - expected_entropy)
     return float(mi)
+

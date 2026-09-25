@@ -127,3 +127,4 @@ class CalibrationReport(BaseModel):
             reliability_diagram=diag,
             risk_coverage_curve=curve,
         )
+

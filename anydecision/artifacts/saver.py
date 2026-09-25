@@ -144,3 +144,4 @@ def load_calibration_artifact(
         raise ValueError(f"Unknown calibration head type: {head_type}")
 
     return calibrator, manifest
+

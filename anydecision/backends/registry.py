@@ -35,3 +35,4 @@ def get_backend(backend: Union[str, BaseBackend], **kwargs: Any) -> BaseBackend:
             if "not found" in str(e).lower() or "connection" in str(e).lower():
                 return MockBackend(model_name=str(backend), **kwargs)
             raise e
+

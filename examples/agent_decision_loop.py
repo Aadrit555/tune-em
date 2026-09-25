@@ -30,3 +30,4 @@ for strat in strategies:
     print(f"  Simulated Token Cost:      {report.simulated_token_cost} tokens")
 
 print("=" * 70)
+

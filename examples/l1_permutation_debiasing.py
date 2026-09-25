@@ -44,3 +44,4 @@ if res_l1.diagnostics:
     print(f"Option-Order Sensitivity: {diag.option_order_sensitivity:.4f}")
     print(f"Entropy:                  {diag.entropy:.4f} nats")
 print("=" * 65)
+

@@ -98,3 +98,4 @@ def create_agent_safety_tasks(n_tasks: int = 30) -> List[AgentTask]:
             )
         )
     return tasks
+

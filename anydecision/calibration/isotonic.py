@@ -93,3 +93,4 @@ class IsotonicCalibration(BaseCalibrator):
             inst.regressors.append(iso)
         inst.fitted = data.get("fitted", True)
         return inst
+

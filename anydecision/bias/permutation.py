@@ -126,3 +126,4 @@ def compute_permutation_invariance_metrics(
         "rank_stability": rank_stability,
         "position_bias_score": position_bias_score,
     }
+

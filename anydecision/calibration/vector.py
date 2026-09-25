@@ -86,3 +86,4 @@ class VectorScaling(BaseCalibrator):
         inst = cls(weights=data.get("weights"), biases=data.get("biases"))
         inst.fitted = data.get("fitted", True)
         return inst
+

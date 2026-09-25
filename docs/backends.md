@@ -39,3 +39,4 @@ class CustomInferenceBackend(BaseBackend):
     def sequence_logprobs(self, prompt: str, candidate_strings: dict[str, str], scoring_method: str) -> dict[str, float]:
         ...
 ```
+

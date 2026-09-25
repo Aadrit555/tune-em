@@ -165,3 +165,4 @@ def demo(
     """Launch the interactive Gradio research demo."""
     from anydecision.demo.app import launch_demo
     launch_demo(server_port=port, share=share)
+

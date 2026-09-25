@@ -33,3 +33,4 @@ for method in [
     for opt, prob in res.probabilities.items():
         print(f"  - {opt:35s}: {prob * 100:.2f}%")
 print("=" * 60)
+

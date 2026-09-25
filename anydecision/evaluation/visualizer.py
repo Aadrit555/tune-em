@@ -109,3 +109,4 @@ class ResearchVisualizer:
             plt.close(fig)
             return p
         return fig
+

@@ -87,3 +87,4 @@ ignore = ["E501", "B008"]
 minversion = "7.0"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+

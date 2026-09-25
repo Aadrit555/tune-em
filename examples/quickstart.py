@@ -32,3 +32,4 @@ print(f"Method:           {result.method}")
 if result.diagnostics:
     print(f"Latency:          {result.diagnostics.latency_ms:.2f} ms")
 print("=" * 45)
+
