@@ -2,15 +2,23 @@
   <img src="assets/banner.png" alt="tune-em banner" width="100%" />
 </p>
 
-```bash
+```text
 ┌──(user@linux-runtime)-[~/tune-em]
-└─$ anydecision --engine typed-readout --zero-generation
-[INIT] Initializing AnyDecision probability runtime v0.2.0...
-[STATUS] Direct vocabulary logit extraction: ACTIVE (zero generation)
-[STATUS] Permutation debiasing & invariance: ONLINE
-[STATUS] Statistical post-hoc calibration: READY
-[STATUS] Selective prediction / abstention: ENABLED
-[READY] A typed, uncertainty-aware decision runtime for open-weight LLMs.
+└─$ ./tune-em --status
+
+  _____ _   _ _   _ _____     _____ __  __ 
+ |_   _| | | | \ | | ____|   | ____|  \/  |
+   | | | | | |  \| |  _| ____|  _| | |\/| |
+   | | | |_| | |\  | |__|____| |___| |  | |
+   |_|  \___/|_| \_|_____|   |_____|_|  |_|
+
+  ANYDECISION :: TYPED LLM DECISION RUNTIME (v0.2.0)
+  --------------------------------------------------
+  [READOUT] Direct Vocab Logit Extraction (Zero Generation)
+  [LEVEL 0] Raw Model Distribution Forward Pass
+  [LEVEL 1] Option-Order Permutation Debiasing & Ensembles
+  [LEVEL 2] Statistical Post-Hoc Calibration & Conformal Sets
+  [ABSTAIN] Selective Risk & Epistemic Uncertainty Control
 ```
 
 <div align="center">
