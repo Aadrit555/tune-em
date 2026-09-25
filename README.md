@@ -1,7 +1,19 @@
-<div align="center">
+<p align="center">
+  <img src="assets/banner.png" alt="tune-em banner" width="100%" />
+</p>
 
-# 🎯 anydecision (tune-em)
-### A Typed, Uncertainty-Aware Decision Runtime for Open-Weight LLMs
+```bash
+┌──(user@linux-runtime)-[~/tune-em]
+└─$ anydecision --engine typed-readout --zero-generation
+[INIT] Initializing AnyDecision probability runtime v0.2.0...
+[STATUS] Direct vocabulary logit extraction: ACTIVE (zero generation)
+[STATUS] Permutation debiasing & invariance: ONLINE
+[STATUS] Statistical post-hoc calibration: READY
+[STATUS] Selective prediction / abstention: ENABLED
+[READY] A typed, uncertainty-aware decision runtime for open-weight LLMs.
+```
+
+<div align="center">
 
 [![PyPI version](https://img.shields.io/badge/pypi-v0.2.0-blue.svg)](https://pypi.org)
 [![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://pypi.org)
@@ -9,13 +21,11 @@
 [![Tests](https://img.shields.io/badge/tests-48%20passed-brightgreen.svg)](tests/)
 [![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
-*Extract structured decisions directly from language model probability distributions without free-form text generation.*
+</div>
 
 ---
 
-</div>
-
-## 📌 Executive Summary & 10 Core Questions
+## Executive Summary & 10 Core Questions
 
 ### 1. What problem does this solve?
 When developers ask an LLM to make a decision (e.g. *"Is this transaction fraudulent? Answer YES or NO"*), standard pipelines instruct the model to generate text tokens, then use regex, JSON parsing, or prompt engineering to extract the answer. This is slow, non-deterministic, brittle to formatting, and discards the rich probability distribution computed in the final layer of the model. `anydecision` turns open-weight LLMs into **typed decision engines** that extract answers directly from the model's logits, measure uncertainty, debias prompt ordering, and abstain when confidence is insufficient.
@@ -53,7 +63,7 @@ Single forward pass per prompt. On consumer GPUs, L0 decisions take **< 5 ms**. 
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 ### Installation
 
@@ -96,29 +106,36 @@ print(result.risk)           # 0.0416
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 Prompt + Candidate Definitions
-              ↓
+              |
+              v
     Tokenization & Prefix Check
-              ↓
+              |
+              v
   Forward Pass / Vocabulary Logits  (Zero Text Generation)
-              ↓
+              |
+              v
   Candidate Extraction & Softmax Normalization
-              ↓
+              |
+              v
   [L1] Permutation Debiasing & Prompt Ensemble Aggregation
-              ↓
+              |
+              v
   [L2] Statistical Post-Hoc Calibration (T-Scaling / Platt)
-              ↓
+              |
+              v
   Uncertainty Estimation & Selective Risk Check
-              ↓
+              |
+              v
   Strongly Typed Decision Object  (Answer or Selective Abstention)
 ```
 
 ---
 
-## 📊 Typed Question Types
+## Typed Question Interfaces
 
 ```python
 # 1. Binary Decision
@@ -148,7 +165,7 @@ q5 = Question.choice(
 
 ---
 
-## 🛡️ Selective Prediction & Abstention
+## Selective Prediction & Abstention
 
 Avoid costly model hallucinations on ambiguous inputs:
 
@@ -174,7 +191,7 @@ print(decision.prediction_set)  # e.g. ['billing', 'technical']
 
 ---
 
-## 📈 L2 Statistical Calibration & Versioned Artifacts
+## L2 Statistical Calibration & Versioned Artifacts
 
 Fit post-hoc calibration on validation data and save cryptographically verified artifacts:
 
@@ -192,7 +209,7 @@ new_engine.load_calibration("artifacts/support_router_head.json")
 
 ---
 
-## 🔄 Streaming Online Adaptation
+## Streaming Online Adaptation
 
 Incrementally update calibration parameters as user feedback arrives:
 
@@ -207,7 +224,7 @@ engine.observe(
 
 ---
 
-## 💻 Command Line Interface (CLI)
+## Command Line Interface (CLI)
 
 ```bash
 # 1. Make a single typed decision
@@ -228,7 +245,7 @@ anydecision demo --port 7860
 
 ---
 
-## 🌐 FastAPI HTTP API
+## FastAPI HTTP Service
 
 Start the service with `anydecision serve` or `python -m uvicorn anydecision.serving.app:app`.
 
@@ -249,7 +266,7 @@ Metrics are exposed at `GET /metrics` and Prometheus exposition at `GET /metrics
 
 ---
 
-## 🔬 Research Transparency & Limitations
+## Research Transparency & Limitations
 
 1. **Probabilities Are Not Inherent Ground Truth**: LLM logits reflect the model's training distribution and alignment tokens, not metaphysical truth.
 2. **Calibration Does Not Guarantee Correctness**: Calibration guarantees empirical frequency over exchangeable validation distributions. It does not prevent errors on out-of-distribution instances.
@@ -257,7 +274,7 @@ Metrics are exposed at `GET /metrics` and Prometheus exposition at `GET /metrics
 
 ---
 
-## 🧪 Benchmark Results
+## Benchmark Results
 
 Evaluating customer escalation triage across decision levels:
 
@@ -271,6 +288,6 @@ In agent workflows, enabling **L2 with selective abstention reduced catastrophic
 
 ---
 
-## 📜 License
+## License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
