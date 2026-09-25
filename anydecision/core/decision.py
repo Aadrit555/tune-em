@@ -114,6 +114,14 @@ class Decision(BaseModel):
         default=0.0,
         description="Total execution latency in milliseconds."
     )
+    decision_emergence_layer: Optional[int] = Field(
+        default=None,
+        description="Earliest transformer layer where decision emerged with confidence."
+    )
+    layer_trajectory: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Layer-by-layer trajectory dynamics across transformer depth."
+    )
     trace: Optional[DecisionTrace] = Field(
         default=None,
         description="Step-by-step execution trace when requested."

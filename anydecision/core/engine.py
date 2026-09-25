@@ -91,6 +91,7 @@ class DecisionEngine:
         policy: Optional[DecisionPolicy] = None,
         adaptive: bool = False,
         adaptive_config: Optional[Any] = None,
+        track_layer_trajectory: bool = False,
     ) -> Decision:
         """Execute a typed decision for a given question.
 
@@ -366,6 +367,13 @@ class DecisionEngine:
                 optimal_utility=optimal_eu,
             )
 
+        traj_res = None
+        if track_layer_trajectory:
+            traj_res = self.analyze_layer_trajectory(question)
+            if diagnostics:
+                diagnostics.decision_emergence_layer = traj_res.decision_emergence_layer
+                diagnostics.layer_trajectory = traj_res.model_dump()
+
         return Decision(
             answer=final_answer,
             probabilities=effective_probs,
@@ -385,8 +393,30 @@ class DecisionEngine:
             action_regret=action_regret,
             escalated=is_escalated,
             escalation_reason=escalation_reason_str,
+            decision_emergence_layer=traj_res.decision_emergence_layer if traj_res else None,
+            layer_trajectory=traj_res.model_dump() if traj_res else None,
             diagnostics=diagnostics,
             trace=decision_trace,
+        )
+
+    def analyze_layer_trajectory(
+        self,
+        question: Question,
+        layers: Optional[Sequence[int]] = None,
+        emergence_confidence_threshold: float = 0.65,
+    ) -> Any:
+        """Analyze model internal decision trajectory across transformer layer depth."""
+        from anydecision.representations.trajectory import LayerTrajectoryAnalyzer
+        analyzer = LayerTrajectoryAnalyzer(emergence_confidence_threshold=emergence_confidence_threshold)
+        template = DEFAULT_TEMPLATES.get("structured")
+        prompt = template.render(question)
+        candidate_strings = {opt.key: opt.label for opt in question.options}
+        return analyzer.analyze(
+            backend=self.backend,
+            prompt=prompt,
+            candidate_strings=candidate_strings,
+            question_id=question.id,
+            layers=layers,
         )
 
     def decide_adaptive(

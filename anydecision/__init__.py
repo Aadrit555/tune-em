@@ -32,6 +32,18 @@ from anydecision.core.types import (
     ReadoutStrategy,
 )
 
+from anydecision.representations.fusion import (
+    FusionComparisonExperiment,
+    FusionExperimentReport,
+    FusionModelCard,
+    FusionStrategy,
+    MultiLayerFusionHead,
+)
+from anydecision.representations.trajectory import (
+    LayerCheckpoint,
+    LayerTrajectoryAnalyzer,
+    LayerTrajectoryResult,
+)
 from anydecision.theory.compiler import CompiledExecutionPlan, DecisionCompiler
 from anydecision.theory.utility import UtilityMatrix
 
@@ -53,7 +65,15 @@ __all__ = [
     "DecisionPolicy",
     "DecisionTrace",
     "Diagnostics",
+    "FusionComparisonExperiment",
+    "FusionExperimentReport",
+    "FusionModelCard",
+    "FusionStrategy",
+    "LayerCheckpoint",
+    "LayerTrajectoryAnalyzer",
+    "LayerTrajectoryResult",
     "ModelMetadata",
+    "MultiLayerFusionHead",
     "OptionDefinition",
     "PromptTemplate",
     "Question",

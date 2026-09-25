@@ -142,3 +142,23 @@ class BaseBackend(ABC):
             None, self.sequence_logprobs, prompt, candidate_strings, scoring_method
         )
 
+    def get_layer_hidden_states(
+        self,
+        prompt: str,
+        layers: Optional[List[int]] = None,
+    ) -> Dict[int, np.ndarray]:
+        """Extract hidden representation vectors across specified model layers for the final prompt token."""
+        return {}
+
+    def get_layer_logprobs(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+        layers: Optional[List[int]] = None,
+    ) -> Dict[int, Dict[str, float]]:
+        """Extract candidate log-probabilities across specified transformer layers."""
+        # Default fallback to final layer next_token_logprobs
+        meta = self.get_metadata()
+        last_layer = meta.num_layers or 32
+        return {last_layer: self.next_token_logprobs(prompt, candidate_strings)}
+

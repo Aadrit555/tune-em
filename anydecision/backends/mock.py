@@ -151,3 +151,59 @@ class MockBackend(BaseBackend):
             for p, c in zip(prompts, candidate_strings_list)
         ]
 
+    def get_layer_hidden_states(
+        self,
+        prompt: str,
+        layers: Optional[List[int]] = None,
+    ) -> Dict[int, np.ndarray]:
+        target_layers = layers or [4, 8, 12, 16, 20, 24, 28, 32]
+        # Seed deterministic base vector from prompt
+        h = int(hashlib.sha256(f"{prompt}::base_rep".encode("utf-8")).hexdigest()[:8], 16)
+        rng = np.random.RandomState(h % (2**31 - 1))
+        dim = 128
+        base_vec = rng.randn(dim).astype(np.float32)
+        base_vec /= (np.linalg.norm(base_vec) + 1e-8)
+
+        layer_states = {}
+        for l in target_layers:
+            # Noise decreases as layer depth increases
+            noise_scale = 1.0 / np.sqrt(max(1, l))
+            noise = rng.randn(dim).astype(np.float32) * noise_scale
+            rep = base_vec + noise
+            rep /= (np.linalg.norm(rep) + 1e-8)
+            layer_states[l] = rep
+
+        return layer_states
+
+    def get_layer_logprobs(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+        layers: Optional[List[int]] = None,
+    ) -> Dict[int, Dict[str, float]]:
+        target_layers = layers or [4, 8, 12, 16, 20, 24, 28, 32]
+        final_logprobs = self.next_token_logprobs(prompt, candidate_strings)
+        keys = list(candidate_strings.keys())
+        final_arr = np.array([final_logprobs[k] for k in keys], dtype=np.float64)
+
+        layer_results = {}
+        for l in sorted(target_layers):
+            # Scale temperature and noise based on depth: early layers are high entropy, later layers sharp
+            alpha = min(1.0, float(l) / 28.0)  # reaches full emergence around layer 24-28
+            # Uniform prior mixture for early layers
+            uniform_logits = np.zeros_like(final_arr)
+            interpolated = (1.0 - alpha) * uniform_logits + alpha * final_arr
+            # Add slight perturbation
+            h_layer = int(hashlib.sha256(f"{prompt}::layer_{l}".encode("utf-8")).hexdigest()[:6], 16)
+            layer_rng = np.random.RandomState(h_layer % (2**31 - 1))
+            jitter = layer_rng.randn(len(keys)) * (0.3 * (1.0 - alpha))
+            noisy_logits = interpolated + jitter
+
+            # Softmax to log-probs
+            max_val = np.max(noisy_logits)
+            lse = max_val + np.log(np.sum(np.exp(noisy_logits - max_val)))
+            lps = noisy_logits - lse
+            layer_results[l] = {k: float(lp) for k, lp in zip(keys, lps)}
+
+        return layer_results
+
