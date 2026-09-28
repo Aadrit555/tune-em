@@ -11,11 +11,11 @@
     "abstention_rate": 0.0,
     "selective_accuracy": 0.5,
     "mean_confidence": 0.9112221354767357,
-    "mean_latency_ms": 0.3611350002756808,
-    "p95_latency_ms": 0.5124199995407238,
+    "mean_latency_ms": 0.3326474999994389,
+    "p95_latency_ms": 0.5810950016893901,
     "mean_permutation_agreement": 1.0,
     "mean_position_bias": 0.0,
-    "total_time_seconds": 0.014664099999208702,
+    "total_time_seconds": 0.013511099998140708,
     "details": {
       "risk_coverage": [
         {
@@ -295,11 +295,11 @@
     "abstention_rate": 0.0,
     "selective_accuracy": 0.25,
     "mean_confidence": 0.6002237726058447,
-    "mean_latency_ms": 0.7734799995887442,
-    "p95_latency_ms": 1.1208050009372528,
+    "mean_latency_ms": 0.6693449996419076,
+    "p95_latency_ms": 1.1360199980117607,
     "mean_permutation_agreement": 0.625,
     "mean_position_bias": 0.337568449778031,
-    "total_time_seconds": 0.03118519999770797,
+    "total_time_seconds": 0.026964199998474214,
     "details": {
       "risk_coverage": [
         {
@@ -579,11 +579,11 @@
     "abstention_rate": 0.0,
     "selective_accuracy": 0.25,
     "mean_confidence": 0.5104303075920599,
-    "mean_latency_ms": 0.903709999693092,
-    "p95_latency_ms": 1.2564600001496726,
+    "mean_latency_ms": 0.8415699996476178,
+    "p95_latency_ms": 1.2663400004385037,
     "mean_permutation_agreement": 0.625,
     "mean_position_bias": 0.337568449778031,
-    "total_time_seconds": 0.036401900000782916,
+    "total_time_seconds": 0.03387599999769009,
     "details": {
       "risk_coverage": [
         {

@@ -31,7 +31,19 @@ def von_choices(item: dict[str, Any]) -> dict[str, str]:
 
 
 def expected_to_binary(expected: str) -> str:
+    # JevBench noul items use yes/no labels natively; true/false only as fallback.
     return {"true": "yes", "false": "no"}.get(expected, expected)
+
+
+def noul_option_texts(item: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Option (labels, texts) for noul items in dataset label order."""
+    crit = item["question"].get("criteria", {}) or {}
+    labels = list(item["labels"]) or ["no", "yes"]
+    texts = []
+    for lab in labels:
+        key = {"yes": "true", "no": "false"}.get(lab, lab)
+        texts.append(f"{lab}: {crit.get(key, crit.get(lab, lab))}")
+    return labels, texts
 
 
 def score_levels(item: dict[str, Any]) -> list[str]:

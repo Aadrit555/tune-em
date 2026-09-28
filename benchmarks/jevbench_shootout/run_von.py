@@ -63,12 +63,13 @@ def main() -> None:
                 )
                 pred, probs = str(ans.choice), {str(k): float(v) for k, v in ans.probabilities.items()}
             elif qtype == "noul":
+                # von.judge returns P(condition holds); JevBench noul labels are yes/no.
                 p_true = float(von.judge(
                     state=item["state"],
                     instructions=item["question"].get("instructions", ""),
                 ))
-                pred = "true" if p_true >= 0.5 else "false"
-                probs = {"true": p_true, "false": 1.0 - p_true}
+                pred = "yes" if p_true >= 0.5 else "no"
+                probs = {"yes": p_true, "no": 1.0 - p_true}
             elif qtype == "score":
                 ans = von.rate(
                     state=item["state"],

@@ -25,6 +25,10 @@ env/
 .coverage
 htmlcov/
 
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+
 # Logs & scratch
 *.log
 scratch/
