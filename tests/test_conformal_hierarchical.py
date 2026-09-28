@@ -158,6 +158,60 @@ def test_active_calibration_budget_curve():
     )
     assert len(reports) == 3
     assert [r.budget for r in reports] == [5, 10, 15]
+    for r in reports:
+        assert r.test_size > 0
+        assert r.random_nll >= 0.0 and r.active_brier >= 0.0
+        assert 0.0 <= r.active_selective_risk <= 1.0
+        # Honest wording: single-budget delta is not a cost saving.
+        assert "NOT an annotation-cost saving" in r.summary()
+
+
+def test_active_calibration_no_cost_claim_without_curve():
+    """A single-budget ECE delta must never be presented as annotation-cost reduction."""
+    samples = [
+        BenchmarkSample(
+            question=Question.choice(f"Item {i}", ["billing", "tech", "sales"]),
+            ground_truth="tech" if i % 2 == 0 else "billing",
+        )
+        for i in range(20)
+    ]
+    report = ActiveCalibrationBenchmark.run_benchmark(
+        samples=samples,
+        engine_factory=lambda: DecisionEngine(model="mock"),
+        budget=5,
+    )
+    assert "fewer labels required" not in report.summary()
+    assert "budget curve" in report.summary()
+
+
+def test_estimate_label_savings_requires_curve_evidence():
+    """estimate_label_savings interpolates within evaluated budgets, never extrapolates."""
+    from anydecision.calibration.active import ActiveCalibrationReport
+
+    def _rep(budget: int, ece: float, which: str) -> ActiveCalibrationReport:
+        base = dict(
+            dataset_name="d", pool_size=100, budget=budget, test_size=50,
+            random_accuracy=0.5, active_accuracy=0.5, random_nll=1.0, active_nll=1.0,
+            random_brier=0.25, active_brier=0.25, random_selective_risk=0.5,
+            active_selective_risk=0.5, relative_ece_change_pct=0.0,
+            selected_sample_ids=[],
+        )
+        if which == "random":
+            return ActiveCalibrationReport(random_ece=ece, active_ece=ece, **base)
+        return ActiveCalibrationReport(random_ece=ece, active_ece=ece, **base)
+
+    random_curve = [_rep(10, 0.20, "random"), _rep(20, 0.10, "random"), _rep(40, 0.05, "random")]
+    active_curve = [_rep(10, 0.10, "active")]
+    res = ActiveCalibrationBenchmark.estimate_label_savings(active_curve, random_curve)
+    pt = res["points"][0]
+    assert pt["demonstrated"] is True
+    assert pt["matched_random_budget"] == 20.0
+    assert pt["estimated_savings_pct"] == 50.0
+
+    unreachable = [_rep(10, 0.001, "active")]
+    res2 = ActiveCalibrationBenchmark.estimate_label_savings(unreachable, random_curve)
+    assert res2["points"][0]["demonstrated"] is False
+    assert res2["points"][0]["matched_random_budget"] is None
 
 
 def test_engine_selective_conformal_risk_control():

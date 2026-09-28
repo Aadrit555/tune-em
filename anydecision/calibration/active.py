@@ -46,29 +46,53 @@ class CandidateSampleScore(BaseModel):
 
 
 class ActiveCalibrationReport(BaseModel):
-    """Empirical comparison of active sampling vs random sampling for calibration efficiency."""
+    """Empirical comparison of active sampling vs random sampling at one label budget.
+
+    ``relative_ece_change_pct`` is the relative ECE difference at this single
+    budget point — it is NOT an annotation-cost saving. Label-budget savings
+    can only be read off a budget curve (see estimate_label_savings()).
+    """
     dataset_name: str
     pool_size: int
     budget: int
-    random_ece: float
-    active_ece: float
-    random_accuracy: float
-    active_accuracy: float
-    calibration_cost_savings_pct: float
-    selected_sample_ids: List[str]
+    test_size: int = 0
+    random_ece: float = 0.0
+    active_ece: float = 0.0
+    random_accuracy: float = 0.0
+    active_accuracy: float = 0.0
+    random_nll: float = 0.0
+    active_nll: float = 0.0
+    random_brier: float = 0.0
+    active_brier: float = 0.0
+    random_selective_risk: float = 0.0
+    active_selective_risk: float = 0.0
+    relative_ece_change_pct: float = 0.0
+    ece_ci95: List[float] = Field(default_factory=list)
+    note: str = (
+        "Single-budget ECE delta; not a label-cost saving. "
+        "Use estimate_label_savings() over a budget curve for cost claims."
+    )
+    selected_sample_ids: List[str] = Field(default_factory=list)
+
+    @property
+    def calibration_cost_savings_pct(self) -> float:
+        """Deprecated alias for relative_ece_change_pct (kept for compatibility)."""
+        return self.relative_ece_change_pct
 
     def summary(self) -> str:
         lines = [
             f"=== Active Calibration Benchmark ({self.dataset_name}) ===",
             f"Candidate Pool Size:         {self.pool_size:,}",
-            f"Human Annotation Budget:     {self.budget} samples",
+            f"Human Annotation Budget:     {self.budget} samples (test n={self.test_size})",
             "",
-            f"{'Method':<20} | {'Budget':<8} | {'ECE':<8} | {'Accuracy':<10} | {'Efficiency Gain':<16}",
-            "-" * 70,
-            f"{'Random Sampling':<20} | {self.budget:<8} | {self.random_ece:>6.4f} | {self.random_accuracy*100:>8.2f}% | Baseline",
-            f"{'Active Calibration':<20} | {self.budget:<8} | {self.active_ece:>6.4f} | {self.active_accuracy*100:>8.2f}% | {self.calibration_cost_savings_pct:>+6.1f}% sample eff.",
-            "-" * 70,
-            f"Effective Annotation Cost Reduction: ~{self.calibration_cost_savings_pct:.1f}% fewer labels required.",
+            f"{'Method':<20} | {'Budget':<8} | {'ECE':<8} | {'NLL':<8} | {'Brier':<8} | {'Accuracy':<10}",
+            "-" * 78,
+            f"{'Random Sampling':<20} | {self.budget:<8} | {self.random_ece:>6.4f} | {self.random_nll:>6.4f} | {self.random_brier:>6.4f} | {self.random_accuracy*100:>8.2f}%",
+            f"{'Active Calibration':<20} | {self.budget:<8} | {self.active_ece:>6.4f} | {self.active_nll:>6.4f} | {self.active_brier:>6.4f} | {self.active_accuracy*100:>8.2f}%",
+            "-" * 78,
+            f"Relative ECE change at this budget: {self.relative_ece_change_pct:+.1f}% (positive favors active).",
+            "NOTE: this is NOT an annotation-cost saving. Cost savings require a",
+            "budget curve via evaluate_budget_curve() + estimate_label_savings().",
             "======================================================================",
         ]
         return "\n".join(lines)
@@ -242,33 +266,122 @@ class ActiveCalibrationBenchmark:
         random_ts.fit(np.array(random_probs), np.array(random_labels), keys)
         random_engine.calibrator = random_ts
 
-        # Evaluate both on test set
-        from anydecision.calibration.metrics import compute_ece
+        # Evaluate both on the held-out test set.
+        from anydecision.calibration.metrics import (
+            compute_brier_score,
+            compute_ece,
+            compute_nll,
+        )
 
-        def eval_on_test(eng: DecisionEngine) -> tuple[float, float]:
+        def eval_on_test(eng: DecisionEngine) -> Dict[str, Any]:
             decs = [eng.decide(s.question, level="L2") for s in test_samples]
             confs = np.array([d.confidence for d in decs])
             correct = np.array([1 if d.answer == s.ground_truth else 0 for d, s in zip(decs, test_samples)])
-            acc = float(np.mean(correct))
-            ece_val = compute_ece(confs, correct)
-            return acc, ece_val
+            prob_rows = np.array([[d.probabilities.get(k, 0.0) for k in keys] for d in decs])
+            label_idx = np.array([k_to_idx[s.ground_truth] for s in test_samples])
+            # Selective risk at ~80% coverage (risk among the top-80% most confident).
+            order = np.argsort(-confs)
+            keep = max(1, int(round(0.8 * len(order))))
+            sel = order[:keep]
+            selective_risk = float(1.0 - np.mean(correct[sel])) if len(sel) else 1.0
+            return {
+                "accuracy": float(np.mean(correct)),
+                "ece": compute_ece(confs, correct),
+                "nll": compute_nll(prob_rows, label_idx),
+                "brier": compute_brier_score(prob_rows, label_idx),
+                "selective_risk": selective_risk,
+                "confs": confs,
+                "correct": correct,
+            }
 
-        act_acc, act_ece = eval_on_test(active_engine)
-        rand_acc, rand_ece = eval_on_test(random_engine)
+        act = eval_on_test(active_engine)
+        rnd = eval_on_test(random_engine)
 
-        savings = max(0.0, ((rand_ece - act_ece) / max(1e-6, rand_ece)) * 100.0)
+        rel_ece_change = ((rnd["ece"] - act["ece"]) / max(1e-6, rnd["ece"])) * 100.0
+
+        # 95% bootstrap CI (fixed seed) for the ECE difference on the test set.
+        ci95: List[float] = []
+        if len(test_samples) >= 10:
+            from anydecision.calibration.metrics import compute_ece as _ece
+            rng = np.random.RandomState(12345)
+            diffs = []
+            for _ in range(200):
+                idx = rng.randint(0, len(test_samples), len(test_samples))
+                e_r = _ece(rnd["confs"][idx], rnd["correct"][idx])
+                e_a = _ece(act["confs"][idx], act["correct"][idx])
+                diffs.append(e_r - e_a)
+            lo, hi = float(np.percentile(diffs, 2.5)), float(np.percentile(diffs, 97.5))
+            ci95 = [lo, hi]
 
         return ActiveCalibrationReport(
             dataset_name=dataset_name,
             pool_size=n,
             budget=budget,
-            random_ece=rand_ece,
-            active_ece=act_ece,
-            random_accuracy=rand_acc,
-            active_accuracy=act_acc,
-            calibration_cost_savings_pct=savings,
+            test_size=len(test_samples),
+            random_ece=rnd["ece"],
+            active_ece=act["ece"],
+            random_accuracy=rnd["accuracy"],
+            active_accuracy=act["accuracy"],
+            random_nll=rnd["nll"],
+            active_nll=act["nll"],
+            random_brier=rnd["brier"],
+            active_brier=act["brier"],
+            random_selective_risk=rnd["selective_risk"],
+            active_selective_risk=act["selective_risk"],
+            relative_ece_change_pct=float(rel_ece_change),
+            ece_ci95=ci95,
             selected_sample_ids=active_ids,
         )
+
+    @staticmethod
+    def estimate_label_savings(
+        active_curve: Sequence[ActiveCalibrationReport],
+        random_curve: Sequence[ActiveCalibrationReport],
+    ) -> Dict[str, Any]:
+        """Estimate annotation savings from budget curves (honest cost comparison).
+
+        For each active budget point, finds the smallest random-sampling budget
+        whose ECE is at or below the active ECE (linear interpolation between
+        evaluated random budgets). Returns measured savings per point plus an
+        explanation. Points where random never reaches the active ECE within
+        the evaluated budgets are reported as not-demonstrated, never
+        extrapolated.
+        """
+        rand_pts = sorted((r.budget, r.random_ece) for r in random_curve)
+        out: List[Dict[str, Any]] = []
+        for a in sorted(active_curve, key=lambda r: r.budget):
+            target = a.active_ece
+            matched: Optional[float] = None
+            for (b0, e0), (b1, e1) in zip(rand_pts, rand_pts[1:]):
+                if (e0 - target) * (e1 - target) <= 0 and e0 != e1:
+                    frac = (e0 - target) / (e0 - e1)
+                    matched = float(b0 + frac * (b1 - b0))
+                    break
+                if e1 <= target:
+                    matched = float(b1)
+                    break
+            else:
+                if rand_pts and rand_pts[0][1] <= target:
+                    matched = float(rand_pts[0][0])
+            if matched is None or matched <= 0:
+                out.append({
+                    "active_budget": a.budget, "active_ece": target,
+                    "matched_random_budget": None, "estimated_savings_pct": None,
+                    "demonstrated": False,
+                    "explanation": "Random sampling did not reach this ECE within evaluated budgets.",
+                })
+            else:
+                out.append({
+                    "active_budget": a.budget, "active_ece": target,
+                    "matched_random_budget": matched,
+                    "estimated_savings_pct": float((1.0 - a.budget / matched) * 100.0),
+                    "demonstrated": True,
+                    "explanation": (
+                        f"Random needs ~{matched:.1f} labels to match active ECE "
+                        f"{target:.4f} at {a.budget} labels."
+                    ),
+                })
+        return {"points": out}
 
     @staticmethod
     def evaluate_budget_curve(
