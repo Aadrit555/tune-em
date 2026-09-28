@@ -36,4 +36,6 @@ def test_synchronous_batch_decide():
     assert len(results) == 4
     for r in results:
         assert r.answer in ("billing", "tech", "sales")
+        assert r.method == "batched_vectorized"
+        assert r.backend_calls == 1
 

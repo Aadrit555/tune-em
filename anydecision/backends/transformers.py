@@ -171,3 +171,41 @@ class TransformersBackend(BaseBackend):
 
         return {k: float(s) for k, s in zip(keys, norm_scores)}
 
+    def batch_next_token_logprobs(
+        self,
+        prompts: List[str],
+        candidate_strings_list: List[Dict[str, str]],
+    ) -> List[Dict[str, float]]:
+        """Vectorized batched forward pass with left-padding for causal LM."""
+        if not prompts:
+            return []
+
+        orig_pad_side = getattr(self.tokenizer, "padding_side", "right")
+        self.tokenizer.padding_side = "left"
+        inputs = self.tokenizer(prompts, return_tensors="pt", padding=True).to(self.device)
+        self.tokenizer.padding_side = orig_pad_side
+
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            last_logits = outputs.logits[:, -1, :].to(torch.float32)
+
+        vocab_logprobs = torch.log_softmax(last_logits, dim=-1).cpu().numpy()
+
+        results = []
+        for b_idx, candidate_strings in enumerate(candidate_strings_list):
+            cand_scores = {}
+            for key, text in candidate_strings.items():
+                tokens_space = self.tokenizer.encode(" " + text.strip(), add_special_tokens=False)
+                tokens_raw = self.tokenizer.encode(text.strip(), add_special_tokens=False)
+                token_id = tokens_space[0] if tokens_space else (tokens_raw[0] if tokens_raw else 0)
+                cand_scores[key] = float(vocab_logprobs[b_idx, token_id])
+
+            keys = list(cand_scores.keys())
+            scores = np.array([cand_scores[k] for k in keys], dtype=np.float64)
+            max_s = np.max(scores)
+            log_z = max_s + np.log(np.sum(np.exp(scores - max_s)))
+            norm_scores = scores - log_z
+            results.append({k: float(s) for k, s in zip(keys, norm_scores)})
+
+        return results
+

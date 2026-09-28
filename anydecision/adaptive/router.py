@@ -106,6 +106,18 @@ class AdaptiveComputeRouter:
                 engine=engine,
             )
 
+        # Check if backend calls ceiling reached before L1
+        if total_backend_calls >= self.config.max_backend_calls:
+            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+            return self._finalize_adaptive_decision(
+                decision=dec_l0,
+                compute_path=compute_path,
+                backend_calls=total_backend_calls,
+                tokens=total_tokens,
+                latency_ms=elapsed_ms,
+                engine=engine,
+            )
+
         # Step 2: Escalate to Level L1 (Zero-Label Permutation Debiasing)
         dec_l1 = engine.decide(
             question=question,
@@ -126,9 +138,9 @@ class AdaptiveComputeRouter:
             and not dec_l1.abstained
         )
 
-        # If confident or if no L2 calibrator exists, return L1
+        # If confident, or if no L2 calibrator exists, or if call ceiling reached, return L1
         has_l2_calibrator = engine.calibrator is not None or engine.adapter.calibrator.fitted
-        if can_exit_l1 or not has_l2_calibrator:
+        if can_exit_l1 or not has_l2_calibrator or total_backend_calls >= self.config.max_backend_calls:
             elapsed_ms = (time.perf_counter() - start_time) * 1000.0
             return self._finalize_adaptive_decision(
                 decision=dec_l1,
@@ -147,6 +159,9 @@ class AdaptiveComputeRouter:
             **kwargs,
         )
         compute_path.append("L2")
+        l2_calls = dec_l2.diagnostics.number_of_backend_calls if dec_l2.diagnostics else 1
+        total_backend_calls += l2_calls
+        total_tokens += approx_q_tokens * l2_calls
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
         return self._finalize_adaptive_decision(

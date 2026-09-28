@@ -663,12 +663,78 @@ class DecisionEngine:
         level: Optional[Union[str, DecisionLevel]] = None,
         **kwargs: Any,
     ) -> List[Decision]:
-        """Perform batched decisions across multiple questions with prefix sharing."""
-        # Detect shared prefixes and evaluate efficiently
-        results = []
-        for q in questions:
-            results.append(self.decide(q, level=level, **kwargs))
-        return results
+        """Perform batched decisions across multiple questions using vectorized model forward passes."""
+        if not questions:
+            return []
+
+        target_level = DecisionLevel(level) if isinstance(level, str) else (level or self.default_level)
+
+        can_batch_vectorized = (
+            target_level == DecisionLevel.L0
+            and all(q.answer_type != AnswerType.MULTI_CHOICE for q in questions)
+            and not kwargs.get("adaptive", False)
+            and not kwargs.get("track_layer_trajectory", False)
+        )
+
+        if not can_batch_vectorized:
+            # Sequential fallback for multi-label or multi-level calibration pipelines
+            return [self.decide(q, level=level, **kwargs) for q in questions]
+
+        tmpl = DEFAULT_TEMPLATES.get("minimal")
+        prompts = [tmpl.render(q) for q in questions]
+        candidate_strings_list = [{opt.key: opt.label for opt in q.options} for q in questions]
+
+        start_time = time.perf_counter()
+        batch_logprobs = self.backend.batch_next_token_logprobs(prompts, candidate_strings_list)
+        total_latency_ms = (time.perf_counter() - start_time) * 1000.0
+        per_item_latency = total_latency_ms / max(1, len(questions))
+
+        decisions = []
+        for q, lps in zip(questions, batch_logprobs):
+            probs = normalize_log_probabilities(lps)
+            sorted_candidates = sorted(probs.items(), key=lambda kv: kv[1], reverse=True)
+            top_answer, top_confidence = sorted_candidates[0] if sorted_candidates else (None, 0.0)
+            margin = float(sorted_candidates[0][1] - sorted_candidates[1][1]) if len(sorted_candidates) > 1 else float(top_confidence)
+            entropy_nats = compute_entropy(list(probs.values()))
+            posterior_risk = float(1.0 - top_confidence)
+
+            should_abstain, abstain_reason = self.abstention_controller.evaluate(
+                confidence=top_confidence,
+                probabilities=probs,
+                calibrated_risk=posterior_risk,
+            )
+
+            diag = Diagnostics(
+                backend=self.metadata.backend_name,
+                latency_ms=per_item_latency,
+                model=self.metadata.model_name,
+                level=target_level.value,
+                raw_probabilities=probs,
+                entropy=entropy_nats,
+                risk=posterior_risk,
+                number_of_backend_calls=1,
+            )
+
+            decisions.append(Decision(
+                answer=None if should_abstain else top_answer,
+                probabilities=probs,
+                confidence=top_confidence,
+                choice_probability=top_confidence,
+                choice_margin=margin,
+                predictive_entropy=entropy_nats,
+                calibrated_error_estimate=posterior_risk,
+                uncertainty=float(1.0 - top_confidence),
+                level=target_level.value,
+                method="batched_vectorized",
+                abstained=should_abstain,
+                reason=abstain_reason,
+                risk=posterior_risk,
+                diagnostics=diag,
+                latency_ms=per_item_latency,
+                backend_calls=1,
+            ))
+
+        return decisions
 
     async def async_decide(
         self,

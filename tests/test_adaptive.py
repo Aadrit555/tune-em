@@ -99,3 +99,17 @@ def test_decision_economics_evaluator():
     assert "DECISION ECONOMICS BENCHMARK" in summary
     assert "Adaptive" in summary
     assert "$" in summary
+
+
+def test_adaptive_router_enforces_max_backend_calls_ceiling():
+    """Verify router stops early when total backend calls reaches max_backend_calls limit."""
+    engine = DecisionEngine(model="mock")
+    q = Question.choice("Classify request", ["billing", "tech", "sales"])
+    # Set ceiling of 1 backend call
+    config = AdaptiveComputeConfig(
+        early_exit_l0_confidence=0.9999,
+        max_backend_calls=1,
+    )
+    decision = engine.decide_adaptive(q, adaptive_config=config)
+    assert decision.backend_calls <= 1
+    assert decision.compute_path == ["L0"]
