@@ -669,15 +669,22 @@ class DecisionEngine:
 
         target_level = DecisionLevel(level) if isinstance(level, str) else (level or self.default_level)
 
+        has_multi_token = any(
+            q.readout_strategy == ReadoutStrategy.MULTI_TOKEN_SEQUENCE
+            or self.backend.requires_sequence_scoring(q.text, {opt.key: opt.label for opt in q.options})
+            for q in questions
+        )
+
         can_batch_vectorized = (
             target_level == DecisionLevel.L0
             and all(q.answer_type != AnswerType.MULTI_CHOICE for q in questions)
+            and not has_multi_token
             and not kwargs.get("adaptive", False)
             and not kwargs.get("track_layer_trajectory", False)
         )
 
         if not can_batch_vectorized:
-            # Sequential fallback for multi-label or multi-level calibration pipelines
+            # Sequential fallback for multi-label, multi-token, or multi-level calibration pipelines
             return [self.decide(q, level=level, **kwargs) for q in questions]
 
         tmpl = DEFAULT_TEMPLATES.get("minimal")
@@ -688,6 +695,8 @@ class DecisionEngine:
         batch_logprobs = self.backend.batch_next_token_logprobs(prompts, candidate_strings_list)
         total_latency_ms = (time.perf_counter() - start_time) * 1000.0
         per_item_latency = total_latency_ms / max(1, len(questions))
+
+        effective_utility_matrix = kwargs.get("utility_matrix") or getattr(self.policy, "utility_matrix", None)
 
         decisions = []
         for q, lps in zip(questions, batch_logprobs):
@@ -704,6 +713,26 @@ class DecisionEngine:
                 calibrated_risk=posterior_risk,
             )
 
+            # Decision Theory & Action Economics in batch
+            selected_act: Optional[str] = None
+            expected_utilities: Dict[str, float] = {}
+            optimal_eu: Optional[float] = None
+            action_regret: Optional[float] = None
+            is_escalated: bool = False
+            escalation_reason_str: Optional[str] = None
+
+            if effective_utility_matrix is not None:
+                best_act, best_eu, act_regret, eus = effective_utility_matrix.select_optimal_action(probs)
+                selected_act = best_act
+                expected_utilities = eus
+                optimal_eu = best_eu
+                action_regret = act_regret
+                if best_act in ("human_review", "escalate", "manual_review"):
+                    is_escalated = True
+                    escalation_reason_str = (
+                        f"Decision-Theoretic: Action '{best_act}' maximizes expected utility ({best_eu:.2f})"
+                    )
+
             diag = Diagnostics(
                 backend=self.metadata.backend_name,
                 latency_ms=per_item_latency,
@@ -715,11 +744,17 @@ class DecisionEngine:
                 number_of_backend_calls=1,
             )
 
+            last_raw = getattr(self.backend, "_last_raw_vocab_lps", {})
+            raw_vocab_lp = last_raw.get(top_answer) if top_answer is not None else None
+            raw_token_prob = float(np.exp(raw_vocab_lp)) if raw_vocab_lp is not None else None
+
             decisions.append(Decision(
                 answer=None if should_abstain else top_answer,
                 probabilities=probs,
                 confidence=top_confidence,
                 choice_probability=top_confidence,
+                raw_vocab_logprob=raw_vocab_lp,
+                model_token_probability=raw_token_prob,
                 choice_margin=margin,
                 predictive_entropy=entropy_nats,
                 calibrated_error_estimate=posterior_risk,
@@ -729,6 +764,12 @@ class DecisionEngine:
                 abstained=should_abstain,
                 reason=abstain_reason,
                 risk=posterior_risk,
+                selected_action=selected_act,
+                expected_utilities=expected_utilities,
+                optimal_action_utility=optimal_eu,
+                action_regret=action_regret,
+                escalated=is_escalated,
+                escalation_reason=escalation_reason_str,
                 diagnostics=diag,
                 latency_ms=per_item_latency,
                 backend_calls=1,
