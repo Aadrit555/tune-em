@@ -365,3 +365,4 @@ class VonHeadToHeadBenchmark:
             latency_and_throughput=test4_data,
             doom_combat_results=test5_data,
         )
+

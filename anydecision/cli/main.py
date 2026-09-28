@@ -207,3 +207,23 @@ def compare_von(
     from anydecision.evaluation.von_comparison import VonHeadToHeadBenchmark
     VonHeadToHeadBenchmark.run_benchmark(model=model, render_console=True)
 
+
+@app.command("real-doom")
+def real_doom(
+    map_code: str = typer.Option("E1M1", "--map", "-m", help="Map to evaluate (e.g. E1M1, E1M8, E2M8)"),
+    skill: int = typer.Option(3, "--skill", "-s", help="Skill level: 1 (Easy) to 5 (Nightmare)"),
+    wad_path: Optional[str] = typer.Option(None, "--wad", "-w", help="Optional path to DOOM.WAD binary"),
+    model: str = typer.Option("mock", "--model", help="Decision model backend"),
+) -> None:
+    """Execute tactical decision AI against real Ultimate DOOM IWAD binary level entities."""
+    from anydecision.games.ultimate_doom import RealDoomEvaluator
+    engine = DecisionEngine(model=model)
+    RealDoomEvaluator.run_map_evaluation(
+        engine=engine,
+        map_code=map_code,
+        skill_level=skill,
+        wad_path=wad_path,
+        render_console=True,
+    )
+
+

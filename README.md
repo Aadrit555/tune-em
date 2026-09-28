@@ -26,7 +26,7 @@
 [![PyPI version](https://img.shields.io/badge/pypi-v0.2.0-blue.svg)](https://pypi.org)
 [![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://pypi.org)
 [![License](https://img.shields.io/badge/License-Apache_2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Tests](https://img.shields.io/badge/tests-91%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-97%20passed-brightgreen.svg)](tests/)
 [![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
 </div>
@@ -344,6 +344,52 @@ Total Demons Slain:    3
 Mean Decision Latency: 9.82 ms
 Throughput:            101.8 decisions / sec
 ```
+
+### Authentic Ultimate DOOM IWAD Engine & Scorecard (`real-doom`)
+
+Beyond synthetic combat scenarios, `anydecision` can parse **official binary IWAD game data** (`DOOM.WAD`, 1993/1995 id Software) directly. It reads the binary lumps (`THINGS`, coordinates, flags, difficulty masks), extracts real spatial entities (Zombiemen, Shotgun Guys, Imps, Pinky Demons, Barons of Hell, Cyberdemons, explosive barrels, and pickups), and executes real-time expected utility decisions against genuine level geometry.
+
+```bash
+# Evaluate tactical clearance on E1M1: Hangar
+anydecision real-doom --map E1M1
+
+# Evaluate boss showdown on E2M8: Tower of Babel (Cyberdemon showdown)
+anydecision real-doom --map E2M8 --skill 4
+```
+
+#### Authentic id Software End-of-Level Scorecard Output
+
+```text
+========================================================================
+   ULTIMATE DOOM IWAD ENGINE - REAL LEVEL EVALUATOR: E1M1: HANGAR 
+   WAD Source: DOOM.WAD (12.4 MB, 2,306 Lumps)
+   Skill Level: Hurt Me Plenty | Total WAD Entities: 143
+   Hostiles: 6 | Pickups: 21 | Barrels: 9
+========================================================================
+
+  Turn 01 | HUD: [ >:D ] 98% HP | Action: SPRINT TO SECURE BOX OF SHELLS (EU: +37.4 | Conf: 49.8% | L8) | ITEM SECURED: Collected Box of Shells!
+  Turn 02 | HUD: [ >:D ] 95% HP | Action: FIRE SHOTGUN AT ZOMBIEMAN (EU: +27.8 | Conf: 50.7% | L8) | DIRECT HIT: 108 DMG! Zombieman obliterated!
+  Turn 05 | HUD: [ >:D ] 98% HP | Action: IGNITE EXPLOSIVE BARREL ADJACENT TO ZOMBIEMAN (EU: +34.0 | Conf: 47.6% | L8) | BARREL EXPLOSION: Detonated toxic barrel! 171 AoE blast damage!
+  Turn 07 | HUD: [ >:D ] 98% HP | Action: FIRE SHOTGUN AT IMP (EU: +26.9 | Conf: 46.8% | L20) | DIRECT HIT: 98 DMG! Imp obliterated into gibs!
+  Turn 09 | HUD: [ >:D ] 99% HP | Action: FIRE SHOTGUN AT IMP (EU: +25.9 | Conf: 45.2% | L8) | DIRECT HIT: 72 DMG! Level hostiles eradicated!
+
+========================================================================
+             ULTIMATE DOOM END-OF-LEVEL SCORECARD: E1M1 
+========================================================================
++-----------------------------------------------------------------------------+
+| Score Metric             | Level Result           | Rating / Assessment     |
+|--------------------------+------------------------+-------------------------|
+| KILLS (Demons Slain)     | 6 / 6 (100.0%)         | EXCELLENT COMBAT RUN    |
+| ITEMS (Pickups Gathered) | 3 / 21 (14.3%)         | SUPPLY EFFICIENT        |
+| SURVIVAL VITALITY        | 99% Health | 19% Armor | VICTORIOUS SURVIVOR     |
+| MEAN DECISION LATENCY    | 9.01 ms                | 111.0 decisions / sec   |
+| ACCUMULATED EXPECTED     | +281.5 EU              | POSITIVE REGRET-MINIMAL |
+| UTILITY                  |                        | POLICY                  |
+| MISSION STATUS           | LEVEL CLEARED          | AUTHENTIC IWAD LEVEL    |
+|                          |                        | VERIFIED                |
++-----------------------------------------------------------------------------+
+```
+
 
 ---
 

@@ -9,6 +9,14 @@ from anydecision.games.doom import (
     DoomTacticalAgent,
 )
 
+from anydecision.games.ultimate_doom import (
+    RealDoomEvaluator,
+    RealDoomMap,
+    RealDoomScoreReport,
+    RealWadEntity,
+    UltimateDoomWadParser,
+)
+
 __all__ = [
     "DoomActionOutcome",
     "DoomCombatBenchmarkRunner",
@@ -16,5 +24,10 @@ __all__ = [
     "DoomGameState",
     "DoomScenarioEnvironment",
     "DoomTacticalAgent",
+    "RealDoomEvaluator",
+    "RealDoomMap",
+    "RealDoomScoreReport",
+    "RealWadEntity",
+    "UltimateDoomWadParser",
 ]
 
