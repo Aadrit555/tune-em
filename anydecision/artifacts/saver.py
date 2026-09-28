@@ -14,7 +14,6 @@ from typing import Any, Dict, Optional, Tuple, Union
 
 from anydecision.artifacts.schema import ArtifactManifest, IntegrityBlock
 from anydecision.calibration.base import BaseCalibrator
-from anydecision.calibration.conformal import ConformalPredictor
 from anydecision.calibration.isotonic import IsotonicCalibration
 from anydecision.calibration.platt import PlattScaling
 from anydecision.calibration.temperature import TemperatureScaling
@@ -161,7 +160,7 @@ def load_calibration_artifact(
     if not path.exists():
         raise FileNotFoundError(f"Calibration artifact not found at {path}")
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
     manifest = ArtifactManifest.model_validate(data)

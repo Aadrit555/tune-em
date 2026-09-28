@@ -12,7 +12,6 @@ calibration candidates using:
 from __future__ import annotations
 
 from enum import Enum
-import math
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 import numpy as np
 from pydantic import BaseModel, Field

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import numpy as np
 
 from anydecision.backends.base import BaseBackend, ModelMetadata
 from anydecision.scoring.candidate_tokenizer import (
-    CandidateTokenInfo,
     requires_sequence_scoring_for_candidates,
     tokenize_candidate_set,
 )

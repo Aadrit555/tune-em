@@ -1,13 +1,13 @@
 """Live Interactive DOOM Gameplay Runner using anydecision Expected Utility Runtime.
 
 Pops up a full 800x600 window with HUD and sound, placing you directly inside
-the Farama Foundation ViZDoom arena where waves of demons charge in real time.
+the ViZDoom arena where waves of demons charge in real time.
+(ViZDoom integration; not affiliated with or verified by the Farama Foundation.)
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
 from anydecision.games.vizdoom_env import ViZDoomDecisionRunner
 
 

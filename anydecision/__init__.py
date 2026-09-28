@@ -73,10 +73,6 @@ from anydecision.games.doom import (
     DoomScenarioEnvironment,
     DoomTacticalAgent,
 )
-from anydecision.models.decision_head import (
-    FastOptionScorer,
-    NonAutoregressiveDecisionHead,
-)
 from anydecision.representations.fusion import (
     FusionComparisonExperiment,
     FusionExperimentReport,
@@ -165,6 +161,32 @@ __all__ = [
     "run_tui",
     "save_calibration_artifact",
 ]
+
+_LAZY_TORCH_SYMBOLS = {
+    "FastOptionScorer": "anydecision.models.decision_head",
+    "NonAutoregressiveDecisionHead": "anydecision.models.decision_head",
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily load torch-dependent symbols so core import stays light.
+
+    Requires the ``hf`` extra (torch). Raises an actionable ImportError
+    when torch is not installed instead of breaking ``import anydecision``.
+    """
+    if name in _LAZY_TORCH_SYMBOLS:
+        import importlib
+
+        try:
+            module = importlib.import_module(_LAZY_TORCH_SYMBOLS[name])
+        except ImportError as e:
+            raise ImportError(
+                f"anydecision.{name} requires the 'hf' extra (torch). "
+                "Install it via: pip install 'anydecision[hf]'"
+            ) from e
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 _GLOBAL_ENGINE = None
 

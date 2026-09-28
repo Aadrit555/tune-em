@@ -7,14 +7,11 @@ import pytest
 
 from anydecision.calibration.active import (
     ActiveCalibrationBenchmark,
-    ActiveSelectionCriterion,
 )
 from anydecision.calibration.hierarchical import (
     HierarchicalCalibrator,
-    HierarchicalDiagnostics,
 )
 from anydecision.calibration.selective_conformal import (
-    GuaranteeType,
     SelectiveConformalPredictor,
     SelectiveConformalResult,
 )

@@ -1,7 +1,6 @@
 """Tests for authentic Ultimate DOOM IWAD parsing and combat decision evaluation."""
 
 import os
-from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 

@@ -27,7 +27,7 @@ from anydecision.calibration.platt import PlattScaling
 from anydecision.calibration.temperature import TemperatureScaling
 from anydecision.calibration.vector import VectorScaling
 from anydecision.core.decision import Decision
-from anydecision.core.policies import AbstentionPolicy, DecisionPolicy
+from anydecision.core.policies import DecisionPolicy
 from anydecision.core.question import Question
 from anydecision.core.types import (
     AnswerType,
@@ -40,7 +40,6 @@ from anydecision.scoring.normalization import compute_entropy, normalize_log_pro
 from anydecision.theory.compiler import CompiledExecutionPlan, DecisionCompiler
 from anydecision.theory.utility import UtilityMatrix
 from anydecision.uncertainty.abstention import AbstentionController
-from anydecision.uncertainty.entropy import normalized_entropy
 from anydecision.uncertainty.ood import OODDetector
 
 
@@ -900,7 +899,7 @@ class DecisionEngine:
         filepath: str,
         question_schema: str = "generic",
     ) -> None:
-        """Save active calibration head to a versioned, cryptographically verified artifact."""
+        """Save active calibration head to a versioned, tamper-evident artifact (SHA-256; authenticity only with Ed25519 signature)."""
         if self.calibrator is None:
             raise ValueError("Cannot save: No calibration head has been fitted.")
         save_calibration_artifact(

@@ -11,13 +11,10 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
-from pydantic import BaseModel, Field
-from rich.box import DOUBLE, HEAVY, ROUNDED
+from pydantic import BaseModel
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
 
 from anydecision.core.engine import DecisionEngine
 from anydecision.core.question import Question

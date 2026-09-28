@@ -21,7 +21,21 @@ from anydecision.evaluation.economics import (
     EconomicsConfig,
     LevelComparisonRecord,
 )
-from anydecision.evaluation.visualizer import ResearchVisualizer
+
+def __getattr__(name: str):  # type: ignore[no-redef]
+    """Lazily load the matplotlib-dependent visualizer (research extra)."""
+    if name == "ResearchVisualizer":
+        try:
+            from anydecision.evaluation.visualizer import ResearchVisualizer as _RV
+
+            return _RV
+        except ImportError as e:
+            raise ImportError(
+                "ResearchVisualizer requires the 'research' extra (matplotlib). "
+                "Install it via: pip install 'anydecision[research]'"
+            ) from e
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "AgentTask",

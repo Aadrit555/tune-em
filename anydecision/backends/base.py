@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class ModelMetadata(BaseModel):

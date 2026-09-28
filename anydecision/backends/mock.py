@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from anydecision.backends.base import BaseBackend, ModelMetadata
-from anydecision.scoring.normalization import softmax
 from anydecision.scoring.sequence import SequenceScorer, SequenceScoringMethod
 
 
@@ -224,7 +223,7 @@ class MockBackend(BaseBackend):
     ) -> Dict[int, np.ndarray]:
         target_layers = layers or [4, 8, 12, 16, 20, 24, 28, 32]
         # Seed deterministic base vector from prompt
-        h = int(hashlib.sha256(f"{prompt}::base_rep".encode("utf-8")).hexdigest()[:8], 16)
+        h = int(hashlib.sha256(f"{prompt}::base_rep".encode()).hexdigest()[:8], 16)
         rng = np.random.RandomState(h % (2**31 - 1))
         dim = 128
         base_vec = rng.randn(dim).astype(np.float32)
@@ -260,7 +259,7 @@ class MockBackend(BaseBackend):
             uniform_logits = np.zeros_like(final_arr)
             interpolated = (1.0 - alpha) * uniform_logits + alpha * final_arr
             # Add slight perturbation
-            h_layer = int(hashlib.sha256(f"{prompt}::layer_{l}".encode("utf-8")).hexdigest()[:6], 16)
+            h_layer = int(hashlib.sha256(f"{prompt}::layer_{l}".encode()).hexdigest()[:6], 16)
             layer_rng = np.random.RandomState(h_layer % (2**31 - 1))
             jitter = layer_rng.randn(len(keys)) * (0.3 * (1.0 - alpha))
             noisy_logits = interpolated + jitter
