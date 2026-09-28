@@ -1,5 +1,9 @@
 """anydecision: A typed, uncertainty-aware decision runtime for open-weight LLMs."""
 
+from __future__ import annotations
+
+from typing import Any, Sequence
+
 from anydecision._version import __version__
 from anydecision.adaptive.router import AdaptiveComputeConfig, AdaptiveComputeRouter
 from anydecision.artifacts.saver import (
