@@ -1,26 +1,48 @@
-"""ViZDoom Farama Foundation AI Research Platform Integration.
+"""ViZDoom integration: real game physics + real anydecision policy control.
 
-Connects the anydecision Expected Utility runtime and layer-trajectory tracking
-directly to the active ViZDoom C++/ZDoom physics engine.
+Real pipeline (no hardcoded beliefs, no ignored Decisions):
 
-Supports:
-- Pre-packaged research scenarios: 'basic', 'defend_the_center', 'deadly_corridor', 'health_gathering'
-- Authentic game IWAD levels: 'E1M1', 'E2M8', etc. from DOOM.WAD
-- Visual object recognition and bounding box tracking via labels buffer
-- Real-time Expected Utility action optimization across button vectors
+    REAL ViZDoom STATE -> observation extraction (STATE / VISION / HYBRID)
+    -> typed DecisionContext prompt -> anydecision candidate scoring
+    -> UtilityMatrix -> Decision.selected_action -> REAL ViZDoom action
+    -> REAL game transition -> authoritative game variables
+    -> factual telemetry + machine-readable artifact.
+
+Observation modes:
+    STATE:  privileged game variables + object world coordinates.
+    VISION: rendered screen + labels-buffer bounding boxes only
+            (no world coordinates, no object names beyond the label buffer).
+    HYBRID: both sources.
+
+Policies (identical episodes/seeds/action-space for fair comparison):
+    anydecision: model candidate scoring over tactical states + expected utility.
+    random:      uniform random action (baseline).
+    scripted:    fixed crosshair/bearing heuristic (baseline, clearly labeled).
+
+Metrics use authoritative game variables ONLY:
+    kills  = delta KILLCOUNT (never inferred from reward),
+    deaths = delta DEATHCOUNT,
+    victory is scenario-defined (see VICTORY_CRITERIA); positive reward
+    alone is never called a win.
 """
 
 from __future__ import annotations
 
+import datetime
+import json
 import math
 import os
-from pathlib import Path
 import random
+import subprocess
 import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from collections import Counter
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 from pydantic import BaseModel, Field
-from rich.box import DOUBLE, ROUNDED
+from rich.box import DOUBLE
 from rich.console import Console
 from rich.table import Table
 
@@ -33,7 +55,7 @@ try:
     import vizdoom as vzd
     VIZDOOM_AVAILABLE = True
 except ImportError:
-    vzd = None
+    vzd = None  # type: ignore[assignment]
     VIZDOOM_AVAILABLE = False
 
 
@@ -42,24 +64,336 @@ def is_vizdoom_available() -> bool:
     return VIZDOOM_AVAILABLE
 
 
+class ObservationMode(str, Enum):
+    """Which sensor source the observation was built from."""
+
+    STATE = "STATE"  # privileged game variables + world coordinates
+    VISION = "VISION"  # screen/labels buffer only, no world coordinates
+    HYBRID = "HYBRID"  # both
+
+
+class PolicyKind(str, Enum):
+    """Which policy selected the executed action."""
+
+    ANYDECISION = "anydecision"
+    RANDOM = "random"
+    SCRIPTED = "scripted"
+
+
+# Scenario-defined victory predicates (explicit per scenario; no universal
+# "positive reward = victory" rule). Each entry documents its criterion.
+VICTORY_CRITERIA: Dict[str, str] = {
+    "basic": "kills > 0 (single-monster elimination objective)",
+    "simpler_basic": "kills > 0 (single-monster elimination objective)",
+    "rocket_basic": "kills > 0 (single-monster elimination objective)",
+    "defend_the_center": "kills > 0 (combat survival objective)",
+    "defend_the_line": "kills > 0 (combat survival objective)",
+    "deadly_corridor": "kills > 0 (combat traversal objective)",
+    "cig": "kills > 0 (combat objective)",
+    "deathmatch": "kills > 0 (frag objective)",
+    "health_gathering": "survived episode without death (collection objective)",
+    "health_gathering_supreme": "survived episode without death (collection objective)",
+    "my_way_home": "survived episode without death (navigation objective)",
+    "take_cover": "survived episode without death (survival objective)",
+}
+
+COMBAT_SCENARIOS = {
+    "basic", "simpler_basic", "rocket_basic", "defend_the_center",
+    "defend_the_line", "deadly_corridor", "cig", "deathmatch",
+}
+
+
+def victory_criterion_for(scenario: str) -> str:
+    """Return the documented victory criterion for a scenario."""
+    key = scenario.lower()
+    if key in VICTORY_CRITERIA:
+        return VICTORY_CRITERIA[key]
+    if key.startswith("e1m") or key.startswith("e2m") or key.startswith("e3m") or key.startswith("e4m"):
+        return "kills > 0 or survived without death (WAD-map proxy; exit-switch state not tracked)"
+    return "kills > 0 or survived without death (default proxy; scenario has no registered criterion)"
+
+
+def is_victory(scenario: str, kills: int, died: bool) -> bool:
+    """Scenario-defined victory predicate over authoritative counters."""
+    key = scenario.lower()
+    if key in COMBAT_SCENARIOS or key.startswith(("e1m", "e2m", "e3m", "e4m")):
+        return kills > 0
+    if key in VICTORY_CRITERIA:
+        # Survival objectives.
+        return not died
+    return kills > 0 or not died
+
+
 class ViZDoomScoreReport(BaseModel):
-    """End-of-benchmark evaluation report for ViZDoom episodes."""
+    """Factual end-of-benchmark report for ViZDoom episodes (no subjective ratings)."""
+
     scenario: str
-    episodes: int
-    episodes_won: int
-    win_rate: float
-    total_kills: int
-    total_reward: float
-    mean_reward: float
-    total_decisions: int
-    mean_latency_ms: float
-    decisions_per_sec: float
-    accumulated_expected_utility: float
-    telemetry_log: List[str]
+    victory_criterion: str
+    observation_mode: str = "HYBRID"
+    policy: str = "anydecision"
+    episodes: int = 0
+    episodes_won: int = 0
+    win_rate: float = 0.0
+    completion_rate: float = 0.0
+    total_kills: int = 0
+    total_deaths: int = 0
+    total_damage_taken: float = 0.0
+    total_reward: float = 0.0
+    mean_reward: float = 0.0
+    total_decisions: int = 0
+    total_abstentions: int = 0
+    total_backend_calls: int = 0
+    total_tokens: int = 0
+    tokens_estimated: bool = True
+    mean_latency_ms: float = 0.0
+    p50_latency_ms: float = 0.0
+    p95_latency_ms: float = 0.0
+    p99_latency_ms: float = 0.0
+    decisions_per_sec: float = 0.0
+    action_distribution: Dict[str, int] = Field(default_factory=dict)
+    compute_path_distribution: Dict[str, int] = Field(default_factory=dict)
+    seed: Optional[int] = None
+    backend: str = "unknown"
+    model: str = "unknown"
+    model_revision: str = "main"
+    commit: Optional[str] = None
+    timestamp: str = ""
+    telemetry_log: List[str] = Field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Machine-readable benchmark artifact dict."""
+        return self.model_dump()
+
+    def save_json(self, path: str | Path) -> Path:
+        """Write machine-readable artifact to path."""
+        out = Path(path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        return out
+
+
+def _git_commit() -> Optional[str]:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL, text=True
+        ).strip()
+    except Exception:
+        return None
+
+
+def _percentile(values: List[float], q: float) -> float:
+    if not values:
+        return 0.0
+    return float(np.percentile(np.array(values, dtype=float), q))
+
+
+def _safe_game_var(game: Any, var: Any, default: float = 0.0) -> float:
+    try:
+        if var in game.get_available_game_variables():
+            return float(game.get_game_variable(var))
+    except Exception:
+        pass
+    return default
+
+
+TACTICAL_SCENARIOS = [
+    "danger_melee_rush",
+    "target_locked_fire",
+    "target_flank_left",
+    "target_flank_right",
+    "target_behind",
+    "tactical_search_patrol",
+]
+
+_FALLBACK_SAFE_ACTION = "TACTICAL_RETREAT"
+
+
+def build_tactical_utility_matrix(
+    action_names: List[str], scenarios: Optional[List[str]] = None
+) -> UtilityMatrix:
+    """Shared explicit utility grid mapping tactical actions to hypothesis states."""
+    states = scenarios or list(TACTICAL_SCENARIOS)
+    grid: Dict[str, Dict[str, float]] = {
+        "PRECISION_ATTACK": {
+            "danger_melee_rush": 20.0, "target_locked_fire": 95.0,
+            "target_flank_left": -40.0, "target_flank_right": -40.0,
+            "target_behind": -50.0, "tactical_search_patrol": -50.0,
+        },
+        "KITE_AND_FIRE": {
+            "danger_melee_rush": 95.0, "target_locked_fire": 50.0,
+            "target_flank_left": 10.0, "target_flank_right": 10.0,
+            "target_behind": -30.0, "tactical_search_patrol": -20.0,
+        },
+        "CIRCLE_STRAFE_LEFT": {
+            "danger_melee_rush": 85.0, "target_locked_fire": 45.0,
+            "target_flank_left": 20.0, "target_flank_right": 75.0,
+            "target_behind": 10.0, "tactical_search_patrol": 10.0,
+        },
+        "CIRCLE_STRAFE_RIGHT": {
+            "danger_melee_rush": 85.0, "target_locked_fire": 45.0,
+            "target_flank_left": 75.0, "target_flank_right": 20.0,
+            "target_behind": 10.0, "tactical_search_patrol": 10.0,
+        },
+        "DODGE_STRAFE_LEFT": {
+            "danger_melee_rush": 75.0, "target_locked_fire": 10.0,
+            "target_flank_left": 30.0, "target_flank_right": 70.0,
+            "target_behind": 40.0, "tactical_search_patrol": 20.0,
+        },
+        "DODGE_STRAFE_RIGHT": {
+            "danger_melee_rush": 75.0, "target_locked_fire": 10.0,
+            "target_flank_left": 70.0, "target_flank_right": 30.0,
+            "target_behind": 40.0, "tactical_search_patrol": 20.0,
+        },
+        "TACTICAL_RETREAT": {
+            "danger_melee_rush": 70.0, "target_locked_fire": 0.0,
+            "target_flank_left": 10.0, "target_flank_right": 10.0,
+            "target_behind": 0.0, "tactical_search_patrol": 0.0,
+        },
+        "TACTICAL_ADVANCE": {
+            "danger_melee_rush": -40.0, "target_locked_fire": 30.0,
+            "target_flank_left": 10.0, "target_flank_right": 10.0,
+            "target_behind": 10.0, "tactical_search_patrol": 75.0,
+        },
+        "ASSAULT_ADVANCE": {
+            "danger_melee_rush": -30.0, "target_locked_fire": 75.0,
+            "target_flank_left": -20.0, "target_flank_right": -20.0,
+            "target_behind": -30.0, "tactical_search_patrol": 15.0,
+        },
+        "SNAP_TURN_LEFT": {
+            "danger_melee_rush": 20.0, "target_locked_fire": -25.0,
+            "target_flank_left": 90.0, "target_flank_right": -35.0,
+            "target_behind": 80.0, "tactical_search_patrol": 30.0,
+        },
+        "SNAP_TURN_RIGHT": {
+            "danger_melee_rush": 20.0, "target_locked_fire": -25.0,
+            "target_flank_left": -35.0, "target_flank_right": 90.0,
+            "target_behind": 80.0, "tactical_search_patrol": 50.0,
+        },
+    }
+    matrix = {a: grid.get(a, {s: 0.0 for s in states}) for a in action_names}
+    return UtilityMatrix(actions=action_names, states=states, matrix=matrix)
+
+
+_IGNORED_LABELS = {
+    "DoomPlayer", "BulletPuff", "Blood", "TeleportFog", "GreenArmor", "BlueArmor",
+    "Medikit", "Stimpack", "HealthBonus", "ArmorBonus", "Clip", "ShellBox", "RocketBox",
+}
+
+
+def extract_observation(
+    game: Any,
+    state: Any,
+    mode: ObservationMode,
+    episode: int,
+    step: int,
+) -> Tuple[str, Dict[str, Any]]:
+    """Build a structured observation prompt from the live game state.
+
+    STATE mode uses privileged variables + object world coordinates.
+    VISION mode uses the labels buffer (bounding boxes) + game variables
+    that a screen-only agent could plausibly read (health/ammo HUD values
+    are exposed as numeric HUD state, not world geometry).
+    Returns (prompt_text, observation_detail).
+    """
+    health = _safe_game_var(game, vzd.GameVariable.HEALTH, 100.0)
+    armor = _safe_game_var(game, vzd.GameVariable.ARMOR, 0.0)
+    ammo = _safe_game_var(game, vzd.GameVariable.SELECTED_WEAPON_AMMO, 50.0)
+
+    screen_width = game.get_screen_width() or 320
+    screen_center = screen_width / 2.0
+    vis_monsters = [
+        lbl for lbl in (state.labels or [])
+        if lbl.object_name not in _IGNORED_LABELS
+        and not lbl.object_name.startswith("Dead")
+    ]
+    target_in_crosshair = False
+    target_offset_x = 0.0
+    vis_target_name = "none visible"
+    vis_target_size = 0.0
+    if vis_monsters:
+        vis_monsters.sort(
+            key=lambda m: abs((m.x + m.width / 2.0) - screen_center) - (m.height * 2.0)
+        )
+        primary = vis_monsters[0]
+        vis_target_name = primary.object_name
+        vis_target_size = float(primary.width * primary.height)
+        target_offset_x = (primary.x + primary.width / 2.0) - screen_center
+        target_in_crosshair = abs(target_offset_x) / max(1.0, float(screen_width)) <= 0.055
+
+    detail: Dict[str, Any] = {
+        "health": health, "armor": armor, "ammo": ammo,
+        "visible_hostiles": len(vis_monsters),
+        "crosshair_locked": target_in_crosshair,
+        "target_offset_x": target_offset_x,
+        "primary_target": vis_target_name,
+    }
+
+    if mode in (ObservationMode.STATE, ObservationMode.HYBRID):
+        hostiles: List[Dict[str, Any]] = []
+        if state.objects:
+            players = [o for o in state.objects if o.name == "DoomPlayer"]
+            if players:
+                player = players[0]
+                for o in state.objects:
+                    if o.name not in _IGNORED_LABELS and not o.name.startswith("Dead") and o.name != "DoomPlayer":
+                        dx = o.position_x - player.position_x
+                        dy = o.position_y - player.position_y
+                        dist = math.hypot(dx, dy)
+                        world_deg = math.degrees(math.atan2(dy, dx))
+                        rel_deg = (world_deg - player.angle + 180.0) % 360.0 - 180.0
+                        hostiles.append({"name": o.name, "dist": dist, "rel_deg": rel_deg})
+        hostiles.sort(key=lambda h: h["dist"])
+        detail["radar_hostiles"] = len(hostiles)
+        if hostiles:
+            nearest = hostiles[0]
+            detail.update(
+                nearest_name=nearest["name"], nearest_dist=nearest["dist"],
+                nearest_rel_deg=nearest["rel_deg"],
+            )
+        prompt = (
+            f"VIZDOOM TACTICAL STATE [Ep {episode} | Step {step:02d}]\n"
+            f"Health: {health:.0f} | Armor: {armor:.0f} | Ammo: {ammo:.0f} | "
+            f"Radar hostiles: {len(hostiles)} | Visible: {len(vis_monsters)}\n"
+        )
+        if hostiles:
+            prompt += (
+                f"Nearest threat: {nearest['name']} "
+                f"(dist {nearest['dist']:.1f}, rel-angle {nearest['rel_deg']:+.1f} deg; "
+                f"crosshair {'LOCKED' if target_in_crosshair else f'{target_offset_x:+.1f}px off'})\n"
+            )
+        else:
+            prompt += f"Primary visual: {vis_target_name} | Crosshair: {'LOCKED' if target_in_crosshair else 'searching'}\n"
+        prompt += "Select the regret-minimal tactical combat maneuver."
+    else:
+        # VISION: no world coordinates, no radar geometry.
+        detail["radar_hostiles"] = None
+        prompt = (
+            f"VIZDOOM VISUAL OBSERVATION [Ep {episode} | Step {step:02d}]\n"
+            f"Health: {health:.0f} | Ammo: {ammo:.0f} | Visible hostiles: {len(vis_monsters)}\n"
+            f"Primary target: {vis_target_name} "
+            f"(bbox area {vis_target_size:.0f}px, offset {target_offset_x:+.1f}px; "
+            f"crosshair {'LOCKED' if target_in_crosshair else 'not locked'})\n"
+            "Select the regret-minimal tactical combat maneuver."
+        )
+    return prompt, detail
+
+
+def scripted_baseline_action(detail: Dict[str, Any]) -> str:
+    """Labeled scripted heuristic baseline (not a learned policy)."""
+    if detail.get("crosshair_locked"):
+        return "PRECISION_ATTACK"
+    offset = float(detail.get("target_offset_x", 0.0) or 0.0)
+    if offset < 0:
+        return "SNAP_TURN_LEFT"
+    if offset > 0:
+        return "SNAP_TURN_RIGHT"
+    if detail.get("radar_hostiles"):
+        return "TACTICAL_ADVANCE"
+    return "TACTICAL_ADVANCE"
 
 
 class ViZDoomDecisionRunner:
-    """Runs anydecision Expected Utility policies inside live ViZDoom simulations."""
+    """Runs typed decision policies inside live ViZDoom simulations."""
 
     @staticmethod
     def run_simulation(
@@ -72,19 +406,28 @@ class ViZDoomDecisionRunner:
         frame_skip: int = 4,
         window_visible: bool = False,
         render_console: bool = True,
+        observation_mode: str = "HYBRID",
+        policy: str = "anydecision",
+        seed: Optional[int] = None,
+        min_confidence: Optional[float] = None,
+        output_path: Optional[str] = None,
+        utility_matrix: Optional[UtilityMatrix] = None,
     ) -> ViZDoomScoreReport:
         if not VIZDOOM_AVAILABLE:
             raise ImportError(
-                "ViZDoom is not installed. Install it via 'pip install vizdoom' or 'pip install pygame-ce vizdoom'."
+                "ViZDoom is not installed. Install it via 'pip install vizdoom'."
             )
-
-        if engine is None:
+        mode = ObservationMode(str(observation_mode).upper())
+        policy_kind = PolicyKind(str(policy).lower())
+        if engine is None and policy_kind == PolicyKind.ANYDECISION:
             engine = DecisionEngine(model="mock")
+        if seed is not None:
+            random.seed(seed)
+            np.random.seed(seed % (2**32 - 1))
 
         console = Console() if render_console else None
         game = vzd.DoomGame()
 
-        # Auto-resolve WAD path if provided or in default search paths
         resolved_wad = None
         if wad_path and os.path.exists(wad_path):
             resolved_wad = wad_path
@@ -94,94 +437,65 @@ class ViZDoomDecisionRunner:
                     resolved_wad = p
                     break
 
-        # Check if scenario is an authentic map code (E1M1..E4M9) or a cfg file
         cfg_path = os.path.join(vzd.scenarios_path, f"{scenario}.cfg")
-        is_custom_wad_map = False
-
         if scenario.upper().startswith(("E1M", "E2M", "E3M", "E4M")) and resolved_wad:
-            is_custom_wad_map = True
             scenario = scenario.upper()
             game.set_doom_game_path(resolved_wad)
             game.set_doom_map(scenario)
             game.set_available_buttons([
-                vzd.Button.MOVE_LEFT,
-                vzd.Button.MOVE_RIGHT,
-                vzd.Button.ATTACK,
-                vzd.Button.MOVE_FORWARD,
-                vzd.Button.MOVE_BACKWARD,
-                vzd.Button.TURN_LEFT,
-                vzd.Button.TURN_RIGHT,
+                vzd.Button.MOVE_LEFT, vzd.Button.MOVE_RIGHT, vzd.Button.ATTACK,
+                vzd.Button.MOVE_FORWARD, vzd.Button.MOVE_BACKWARD,
+                vzd.Button.TURN_LEFT, vzd.Button.TURN_RIGHT,
             ])
             game.set_available_game_variables([
-                vzd.GameVariable.HEALTH,
-                vzd.GameVariable.ARMOR,
-                vzd.GameVariable.SELECTED_WEAPON_AMMO,
-                vzd.GameVariable.KILLCOUNT,
+                vzd.GameVariable.HEALTH, vzd.GameVariable.ARMOR,
+                vzd.GameVariable.SELECTED_WEAPON_AMMO, vzd.GameVariable.KILLCOUNT,
+                vzd.GameVariable.DEATHCOUNT, vzd.GameVariable.DAMAGE_TAKEN,
             ])
         elif os.path.exists(cfg_path):
             game.load_config(cfg_path)
         elif resolved_wad:
-            is_custom_wad_map = True
             game.set_doom_game_path(resolved_wad)
             game.set_doom_map("E1M1")
             scenario = "E1M1"
             game.set_available_buttons([
-                vzd.Button.MOVE_LEFT,
-                vzd.Button.MOVE_RIGHT,
-                vzd.Button.ATTACK,
-                vzd.Button.MOVE_FORWARD,
-                vzd.Button.MOVE_BACKWARD,
-                vzd.Button.TURN_LEFT,
-                vzd.Button.TURN_RIGHT,
+                vzd.Button.MOVE_LEFT, vzd.Button.MOVE_RIGHT, vzd.Button.ATTACK,
+                vzd.Button.MOVE_FORWARD, vzd.Button.MOVE_BACKWARD,
+                vzd.Button.TURN_LEFT, vzd.Button.TURN_RIGHT,
             ])
             game.set_available_game_variables([
-                vzd.GameVariable.HEALTH,
-                vzd.GameVariable.ARMOR,
-                vzd.GameVariable.SELECTED_WEAPON_AMMO,
-                vzd.GameVariable.KILLCOUNT,
+                vzd.GameVariable.HEALTH, vzd.GameVariable.ARMOR,
+                vzd.GameVariable.SELECTED_WEAPON_AMMO, vzd.GameVariable.KILLCOUNT,
+                vzd.GameVariable.DEATHCOUNT, vzd.GameVariable.DAMAGE_TAKEN,
             ])
         else:
             cfg_path = os.path.join(vzd.scenarios_path, "basic.cfg")
             game.load_config(cfg_path)
             scenario = "basic"
 
-        # Always register full tactical movement and combat buttons
         for btn in [
-            vzd.Button.MOVE_LEFT,
-            vzd.Button.MOVE_RIGHT,
-            vzd.Button.ATTACK,
-            vzd.Button.MOVE_FORWARD,
-            vzd.Button.MOVE_BACKWARD,
-            vzd.Button.TURN_LEFT,
-            vzd.Button.TURN_RIGHT,
+            vzd.Button.MOVE_LEFT, vzd.Button.MOVE_RIGHT, vzd.Button.ATTACK,
+            vzd.Button.MOVE_FORWARD, vzd.Button.MOVE_BACKWARD,
+            vzd.Button.TURN_LEFT, vzd.Button.TURN_RIGHT,
         ]:
             if btn not in game.get_available_buttons():
                 game.add_available_button(btn)
-
-        # Always ensure critical tactical game variables are registered
         for var in [
-            vzd.GameVariable.KILLCOUNT,
-            vzd.GameVariable.HEALTH,
-            vzd.GameVariable.ARMOR,
-            vzd.GameVariable.SELECTED_WEAPON_AMMO,
+            vzd.GameVariable.KILLCOUNT, vzd.GameVariable.HEALTH,
+            vzd.GameVariable.ARMOR, vzd.GameVariable.SELECTED_WEAPON_AMMO,
+            vzd.GameVariable.DEATHCOUNT, vzd.GameVariable.DAMAGE_TAKEN,
         ]:
-            if var not in game.get_available_game_variables():
-                game.add_available_game_variable(var)
+            try:
+                if var not in game.get_available_game_variables():
+                    game.add_available_game_variable(var)
+            except Exception:
+                pass
 
         game.set_doom_skill(skill)
-
         if window_visible:
-            game.set_screen_resolution(vzd.ScreenResolution.RES_800X600)
-            game.set_sound_enabled(True)
-            game.set_render_hud(True)
-            game.set_render_crosshair(True)
-            game.set_render_weapon(True)
-            game.set_render_decals(True)
-            game.set_render_particles(True)
             game.set_window_visible(True)
         else:
             game.set_window_visible(False)
-
         game.set_labels_buffer_enabled(True)
         game.set_objects_info_enabled(True)
         game.init()
@@ -191,20 +505,10 @@ class ViZDoomDecisionRunner:
 
         if console:
             console.print("\n[bold red]========================================================================[/bold red]")
-            console.print(f"[bold red]     VIZDOOM FARAMA PLATFORM - ANYDECISION EXPECTED UTILITY AGENT       [/bold red]")
-            console.print(f"[bold white]     Scenario: {scenario.upper()} | ViZDoom v{vzd.__version__}[/bold white]")
-            console.print(f"[bold yellow]     Controls: {', '.join(button_names)} ({len(buttons)} available)[/bold yellow]")
+            console.print("[bold red]     VIZDOOM INTEGRATION - TYPED DECISION POLICY EVALUATION            [/bold red]")
+            console.print(f"[bold white]     Scenario: {scenario.upper()} | Policy: {policy_kind.value} | Obs: {mode.value}[/bold white]")
             console.print("[bold red]========================================================================[/bold red]\n")
 
-        episodes_won = 0
-        total_kills = 0
-        total_rewards = []
-        all_latencies = []
-        accumulated_eu = 0.0
-        telemetry_logs = []
-        total_decisions = 0
-
-        # Construct discrete tactical combat and dodging action vectors
         def make_vec(*active_btns: str) -> List[int]:
             v = [0] * len(buttons)
             for b in active_btns:
@@ -225,128 +529,39 @@ class ViZDoomDecisionRunner:
             "SNAP_TURN_LEFT": make_vec("TURN_LEFT"),
             "SNAP_TURN_RIGHT": make_vec("TURN_RIGHT"),
         }
-        action_descriptions = list(action_map.keys())
+        action_names = list(action_map.keys())
+        matrix = utility_matrix or build_tactical_utility_matrix(action_names)
+        criterion = victory_criterion_for(scenario)
 
-        # Situational hypothesis states for Expected Utility optimization
-        scenarios = [
-            "danger_melee_rush",
-            "target_locked_fire",
-            "target_flank_left",
-            "target_flank_right",
-            "target_behind",
-            "tactical_search_patrol",
-        ]
-
-        utility_grid: Dict[str, Dict[str, float]] = {
-            "PRECISION_ATTACK": {
-                "danger_melee_rush": 20.0,
-                "target_locked_fire": 95.0,
-                "target_flank_left": -40.0,
-                "target_flank_right": -40.0,
-                "target_behind": -50.0,
-                "tactical_search_patrol": -50.0,
-            },
-            "KITE_AND_FIRE": {
-                "danger_melee_rush": 95.0,
-                "target_locked_fire": 50.0,
-                "target_flank_left": 10.0,
-                "target_flank_right": 10.0,
-                "target_behind": -30.0,
-                "tactical_search_patrol": -20.0,
-            },
-            "CIRCLE_STRAFE_LEFT": {
-                "danger_melee_rush": 85.0,
-                "target_locked_fire": 45.0,
-                "target_flank_left": 20.0,
-                "target_flank_right": 75.0,
-                "target_behind": 10.0,
-                "tactical_search_patrol": 10.0,
-            },
-            "CIRCLE_STRAFE_RIGHT": {
-                "danger_melee_rush": 85.0,
-                "target_locked_fire": 45.0,
-                "target_flank_left": 75.0,
-                "target_flank_right": 20.0,
-                "target_behind": 10.0,
-                "tactical_search_patrol": 10.0,
-            },
-            "DODGE_STRAFE_LEFT": {
-                "danger_melee_rush": 75.0,
-                "target_locked_fire": 10.0,
-                "target_flank_left": 30.0,
-                "target_flank_right": 70.0,
-                "target_behind": 40.0,
-                "tactical_search_patrol": 20.0,
-            },
-            "DODGE_STRAFE_RIGHT": {
-                "danger_melee_rush": 75.0,
-                "target_locked_fire": 10.0,
-                "target_flank_left": 70.0,
-                "target_flank_right": 30.0,
-                "target_behind": 40.0,
-                "tactical_search_patrol": 20.0,
-            },
-            "TACTICAL_RETREAT": {
-                "danger_melee_rush": 70.0,
-                "target_locked_fire": 0.0,
-                "target_flank_left": 10.0,
-                "target_flank_right": 10.0,
-                "target_behind": 0.0,
-                "tactical_search_patrol": 0.0,
-            },
-            "TACTICAL_ADVANCE": {
-                "danger_melee_rush": -40.0,
-                "target_locked_fire": 30.0,
-                "target_flank_left": 10.0,
-                "target_flank_right": 10.0,
-                "target_behind": 10.0,
-                "tactical_search_patrol": 75.0,
-            },
-            "ASSAULT_ADVANCE": {
-                "danger_melee_rush": -30.0,
-                "target_locked_fire": 75.0,
-                "target_flank_left": -20.0,
-                "target_flank_right": -20.0,
-                "target_behind": -30.0,
-                "tactical_search_patrol": 15.0,
-            },
-            "SNAP_TURN_LEFT": {
-                "danger_melee_rush": 20.0,
-                "target_locked_fire": -25.0,
-                "target_flank_left": 90.0,
-                "target_flank_right": -35.0,
-                "target_behind": 80.0,
-                "tactical_search_patrol": 30.0,
-            },
-            "SNAP_TURN_RIGHT": {
-                "danger_melee_rush": 20.0,
-                "target_locked_fire": -25.0,
-                "target_flank_left": -35.0,
-                "target_flank_right": 90.0,
-                "target_behind": 80.0,
-                "tactical_search_patrol": 50.0,
-            },
-        }
-
-        matrix = UtilityMatrix(actions=action_descriptions, states=scenarios, matrix=utility_grid)
-
-        ignored_labels = {
-            "DoomPlayer", "BulletPuff", "Blood", "TeleportFog", "GreenArmor", "BlueArmor",
-            "Medikit", "Stimpack", "HealthBonus", "ArmorBonus", "Clip", "ShellBox", "RocketBox"
-        }
-
+        episodes_won = 0
+        episodes_completed = 0
+        total_kills = 0
+        total_deaths = 0
+        total_damage_taken = 0.0
+        total_rewards: List[float] = []
+        all_latencies: List[float] = []
+        action_counts: Counter = Counter()
+        compute_path_counts: Counter = Counter()
+        total_decisions = 0
+        total_abstentions = 0
+        total_backend_calls = 0
+        total_tokens = 0
+        tokens_estimated_any = False
+        telemetry_logs: List[str] = []
         max_steps_per_ep = max_steps_per_episode if max_steps_per_episode is not None else (1200 if window_visible else 100)
 
         for ep in range(1, num_episodes + 1):
+            if seed is not None:
+                try:
+                    game.set_seed(seed + ep)
+                except Exception:
+                    pass
             game.new_episode()
             ep_reward = 0.0
             ep_step = 0
-            ep_reward_kills = 0
-            ep_kills_start = (
-                int(game.get_game_variable(vzd.GameVariable.KILLCOUNT))
-                if vzd.GameVariable.KILLCOUNT in game.get_available_game_variables()
-                else 0
-            )
+            ep_kills_start = int(_safe_game_var(game, vzd.GameVariable.KILLCOUNT, 0.0))
+            ep_deaths_start = int(_safe_game_var(game, vzd.GameVariable.DEATHCOUNT, 0.0))
+            ep_damage_start = _safe_game_var(game, vzd.GameVariable.DAMAGE_TAKEN, 0.0)
 
             if console:
                 console.print(f"[bold cyan]>>> Starting ViZDoom Episode {ep}/{num_episodes}...[/bold cyan]")
@@ -358,152 +573,93 @@ class ViZDoomDecisionRunner:
                 if not state:
                     break
 
-                # Extract game state variables
-                health = game.get_game_variable(vzd.GameVariable.HEALTH) if vzd.GameVariable.HEALTH in game.get_available_game_variables() else 100.0
-                ammo = game.get_game_variable(vzd.GameVariable.SELECTED_WEAPON_AMMO) if vzd.GameVariable.SELECTED_WEAPON_AMMO in game.get_available_game_variables() else 50.0
-
-                # 1. 360-degree radar sensor using physical 3D world coordinates
-                hostiles: List[Dict[str, Any]] = []
-                if state.objects:
-                    p_candidates = [o for o in state.objects if o.name == "DoomPlayer"]
-                    if p_candidates:
-                        p_obj = p_candidates[0]
-                        for o in state.objects:
-                            if o.name not in ignored_labels and not o.name.startswith("Dead") and o.name != "DoomPlayer":
-                                dx = o.position_x - p_obj.position_x
-                                dy = o.position_y - p_obj.position_y
-                                dist = math.hypot(dx, dy)
-                                world_deg = math.degrees(math.atan2(dy, dx))
-                                rel_deg = (world_deg - p_obj.angle + 180.0) % 360.0 - 180.0
-                                hostiles.append({
-                                    "name": o.name,
-                                    "dist": dist,
-                                    "rel_deg": rel_deg,
-                                })
-
-                # 2. Visual camera sensor for precision crosshair locking
-                screen_width = game.get_screen_width() or 320
-                screen_center = screen_width / 2.0
-                vis_monsters = [
-                    lbl for lbl in (state.labels or [])
-                    if lbl.object_name not in ignored_labels and not lbl.object_name.startswith("Dead")
-                ]
-
-                target_in_crosshair = False
-                target_offset_x = 0.0
-                vis_target_name = "Searching Arena..."
-                if vis_monsters:
-                    vis_monsters.sort(key=lambda m: abs((m.x + m.width / 2.0) - screen_center) - (m.height * 2.0))
-                    primary_m = vis_monsters[0]
-                    vis_target_name = primary_m.object_name
-                    m_center_x = primary_m.x + (primary_m.width / 2.0)
-                    target_offset_x = m_center_x - screen_center
-                    offset_ratio = abs(target_offset_x) / max(1.0, float(screen_width))
-                    if offset_ratio <= 0.055:
-                        target_in_crosshair = True
-
-                # Synthesize tactical state probabilities from radar and visual sensors
-                c_dist = 999.0
-                c_rel = 0.0
-                c_name = vis_target_name
-
-                if hostiles:
-                    # Sort hostiles by threat priority (proximity weighted by alignment)
-                    hostiles.sort(key=lambda h: h["dist"] + (150.0 if abs(h["rel_deg"]) > 60.0 else 0.0))
-                    c_h = hostiles[0]
-                    c_dist = c_h["dist"]
-                    c_rel = c_h["rel_deg"]
-                    c_name = c_h["name"]
-
-                    if c_dist < 270.0 and target_in_crosshair:
-                        # Demon rushing within danger melee radius and locked in crosshair: KITE AND FIRE!
-                        state_probs = {"danger_melee_rush": 0.90, "target_locked_fire": 0.04, "target_flank_left": 0.02, "target_flank_right": 0.02, "target_behind": 0.01, "tactical_search_patrol": 0.01}
-                    elif c_dist < 270.0 and not target_in_crosshair:
-                        # Demon rushing within danger radius off-axis: circle-strafe dodge while swinging crosshair!
-                        if c_rel < 0:
-                            state_probs = {"danger_melee_rush": 0.50, "target_locked_fire": 0.01, "target_flank_left": 0.45, "target_flank_right": 0.01, "target_behind": 0.02, "tactical_search_patrol": 0.01}
-                        else:
-                            state_probs = {"danger_melee_rush": 0.50, "target_locked_fire": 0.01, "target_flank_left": 0.01, "target_flank_right": 0.45, "target_behind": 0.02, "tactical_search_patrol": 0.01}
-                    elif target_in_crosshair:
-                        # Target aligned at safe combat range: PRECISION ATTACK!
-                        state_probs = {"danger_melee_rush": 0.02, "target_locked_fire": 0.92, "target_flank_left": 0.02, "target_flank_right": 0.02, "target_behind": 0.01, "tactical_search_patrol": 0.01}
-                    elif abs(c_rel) > 85.0:
-                        # Hostile behind player: snap turn immediately without blind firing!
-                        state_probs = {"danger_melee_rush": 0.02, "target_locked_fire": 0.01, "target_flank_left": 0.04, "target_flank_right": 0.04, "target_behind": 0.86, "tactical_search_patrol": 0.03}
-                    elif c_rel < 0:
-                        # Hostile flanking left: snap turn left!
-                        state_probs = {"danger_melee_rush": 0.02, "target_locked_fire": 0.02, "target_flank_left": 0.90, "target_flank_right": 0.02, "target_behind": 0.02, "tactical_search_patrol": 0.02}
-                    else:
-                        # Hostile flanking right: snap turn right!
-                        state_probs = {"danger_melee_rush": 0.02, "target_locked_fire": 0.02, "target_flank_left": 0.02, "target_flank_right": 0.90, "target_behind": 0.02, "tactical_search_patrol": 0.02}
-                elif vis_monsters:
-                    if target_in_crosshair:
-                        state_probs = {"danger_melee_rush": 0.02, "target_locked_fire": 0.92, "target_flank_left": 0.02, "target_flank_right": 0.02, "target_behind": 0.01, "tactical_search_patrol": 0.01}
-                    elif target_offset_x < 0:
-                        state_probs = {"danger_melee_rush": 0.02, "target_locked_fire": 0.02, "target_flank_left": 0.90, "target_flank_right": 0.02, "target_behind": 0.02, "tactical_search_patrol": 0.02}
-                    else:
-                        state_probs = {"danger_melee_rush": 0.02, "target_locked_fire": 0.02, "target_flank_left": 0.02, "target_flank_right": 0.90, "target_behind": 0.02, "tactical_search_patrol": 0.02}
-                else:
-                    # Search and patrol arena
-                    state_probs = {"danger_melee_rush": 0.01, "target_locked_fire": 0.01, "target_flank_left": 0.02, "target_flank_right": 0.02, "target_behind": 0.02, "tactical_search_patrol": 0.92}
-
-                prompt = (
-                    f"VIZDOOM TACTICAL SENSOR [Ep {ep} | Step {ep_step:02d}]\n"
-                    f"Health: {health:.0f}% | Ammo: {ammo:.0f} | Radar Hostiles: {len(hostiles)} | Visible: {len(vis_monsters)}\n"
-                    f"Primary Threat: {c_name} (Dist: {c_dist:.1f}, RelAngle: {c_rel:+.1f} deg | Crosshair: {'LOCKED' if target_in_crosshair else f'{target_offset_x:+.1f}px'})\n"
-                    f"Select the regret-minimal tactical combat maneuver."
-                )
-
-                q = Question.choice(prompt, choices=scenarios)
+                prompt, detail = extract_observation(game, state, mode, ep, ep_step)
 
                 t0 = time.perf_counter()
-                decision = engine.decide_adaptive(q, utility_matrix=matrix, track_layer_trajectory=True)
-                lat_ms = (time.perf_counter() - t0) * 1000.0
+                if policy_kind == PolicyKind.RANDOM:
+                    chosen_act = random.choice(action_names)
+                    probs_repr = "{}"
+                    abstained = False
+                    backend_calls = 0
+                    lat_ms = (time.perf_counter() - t0) * 1000.0
+                elif policy_kind == PolicyKind.SCRIPTED:
+                    chosen_act = scripted_baseline_action(detail)
+                    probs_repr = "{}"
+                    abstained = False
+                    backend_calls = 0
+                    lat_ms = (time.perf_counter() - t0) * 1000.0
+                else:
+                    assert engine is not None
+                    q = Question.choice(prompt, choices=list(matrix.states))
+                    decision = engine.decide_adaptive(
+                        q, utility_matrix=matrix, min_confidence=min_confidence
+                    )
+                    lat_ms = (time.perf_counter() - t0) * 1000.0
+                    # Model beliefs: REAL candidate-conditional distribution, never hardcoded.
+                    state_probs = dict(decision.probabilities)
+                    # The executed action MUST come from Decision.selected_action.
+                    if decision.abstained or not decision.selected_action:
+                        total_abstentions += 1
+                        chosen_act = _FALLBACK_SAFE_ACTION
+                        abstention_note = f"abstained({decision.reason})->safe-fallback"
+                    else:
+                        chosen_act = decision.selected_action
+                        abstention_note = "selected"
+                        # Internal consistency: executed action must equal selected action.
+                        if chosen_act not in action_map:
+                            raise AssertionError(
+                                f"Selected action {chosen_act!r} not in executed action space."
+                            )
+                    probs_repr = (
+                        f"maxP={max(state_probs.values()) if state_probs else 0.0:.2f}"
+                    )
+                    backend_calls = decision.backend_calls
+                    total_backend_calls += backend_calls
+                    total_tokens += decision.tokens_processed
+                    tokens_estimated_any = tokens_estimated_any or bool(decision.tokens_estimated)
+                    compute_path_counts["+".join(decision.compute_path)] += 1
+                    detail["decision_answer"] = decision.answer
+                    detail["abstention_note"] = abstention_note
+
                 all_latencies.append(lat_ms)
+                action_counts[chosen_act] += 1
 
-                best_act, best_eu, regret, eus = matrix.select_optimal_action(state_probs)
-                chosen_act = best_act
-                accumulated_eu += best_eu
-
-                # Execute action vector in the ViZDoom C++ engine
+                # Execute the selected action vector in the ViZDoom engine.
                 action_vector = action_map.get(chosen_act, [0] * len(buttons))
                 step_reward = game.make_action(action_vector, frame_skip)
                 ep_reward += step_reward
 
-                if step_reward >= 1.0:
-                    ep_reward_kills += int(step_reward)
-
                 if window_visible:
-                    time.sleep(0.028)  # Fluid ~35 FPS frame pacing
+                    time.sleep(0.028)
 
                 log_line = (
                     f"Ep {ep} | Step {ep_step:02d} | Action: {chosen_act:<19} | "
-                    f"Threat: {c_name} [d={c_dist:.0f}, rel={c_rel:+.0f}°] | "
-                    f"EU: {best_eu:+.1f} | L{decision.decision_emergence_layer or 8} | R: {step_reward:+.1f}"
+                    f"Obs: {mode.value} | {probs_repr} | R: {step_reward:+.1f}"
                 )
                 telemetry_logs.append(log_line)
-
                 if console and (ep_step % 2 == 1 or step_reward > 0):
                     console.print(f"  {log_line}")
 
-            total_rewards.append(ep_reward)
-            ep_kills_end = (
-                int(game.get_game_variable(vzd.GameVariable.KILLCOUNT))
-                if vzd.GameVariable.KILLCOUNT in game.get_available_game_variables()
-                else 0
-            )
-            var_kills = max(0, ep_kills_end - ep_kills_start)
-            ep_kills = max(var_kills, ep_reward_kills)
+            # Authoritative per-episode counters (game variables ONLY).
+            ep_kills = max(0, int(_safe_game_var(game, vzd.GameVariable.KILLCOUNT, 0.0)) - ep_kills_start)
+            ep_deaths = max(0, int(_safe_game_var(game, vzd.GameVariable.DEATHCOUNT, 0.0)) - ep_deaths_start)
+            ep_damage = max(0.0, _safe_game_var(game, vzd.GameVariable.DAMAGE_TAKEN, 0.0) - ep_damage_start)
+            if ep_step >= max_steps_per_ep or game.is_episode_finished():
+                episodes_completed += 1
             total_kills += ep_kills
-
-            # A positive total reward or kill indicates episode victory
-            if ep_reward > 0 or ep_kills > 0:
+            total_deaths += ep_deaths
+            total_damage_taken += ep_damage
+            total_rewards.append(ep_reward)
+            died = ep_deaths > 0
+            won = is_victory(scenario, ep_kills, died)
+            if won:
                 episodes_won += 1
-                if console:
-                    console.print(f"[bold green]>> Episode {ep} VICTORY: Target eliminated! Reward: {ep_reward:.1f} | Kills: {ep_kills}[/bold green]\n")
-            else:
-                if console:
-                    console.print(f"[bold yellow]>> Episode {ep} COMPLETE: Reward: {ep_reward:.1f} | Kills: {ep_kills}[/bold yellow]\n")
+            if console:
+                status = "OBJECTIVE MET" if won else "EPISODE END"
+                console.print(
+                    f"[bold green]>> Episode {ep} {status}: kills={ep_kills} deaths={ep_deaths} "
+                    f"reward={ep_reward:.1f}[/bold green]\n"
+                )
 
         game.close()
 
@@ -511,62 +667,81 @@ class ViZDoomDecisionRunner:
         throughput = float(1000.0 / max(1e-6, mean_lat))
         mean_rew = float(np.mean(total_rewards)) if total_rewards else 0.0
         win_rate = (episodes_won / max(1, num_episodes)) * 100.0
+        completion_rate = (episodes_completed / max(1, num_episodes)) * 100.0
+        backend_name = "unknown"
+        model_name = "unknown"
+        model_rev = "main"
+        if engine is not None:
+            try:
+                backend_name = engine.metadata.backend_name
+                model_name = engine.metadata.model_name
+                model_rev = engine.metadata.model_revision
+            except Exception:
+                pass
 
         report = ViZDoomScoreReport(
             scenario=scenario,
+            victory_criterion=criterion,
+            observation_mode=mode.value,
+            policy=policy_kind.value,
             episodes=num_episodes,
             episodes_won=episodes_won,
             win_rate=win_rate,
+            completion_rate=completion_rate,
             total_kills=total_kills,
+            total_deaths=total_deaths,
+            total_damage_taken=float(total_damage_taken),
             total_reward=float(sum(total_rewards)),
             mean_reward=mean_rew,
             total_decisions=total_decisions,
+            total_abstentions=total_abstentions,
+            total_backend_calls=total_backend_calls,
+            total_tokens=total_tokens,
+            tokens_estimated=tokens_estimated_any if policy_kind == PolicyKind.ANYDECISION else True,
             mean_latency_ms=mean_lat,
+            p50_latency_ms=_percentile(all_latencies, 50),
+            p95_latency_ms=_percentile(all_latencies, 95),
+            p99_latency_ms=_percentile(all_latencies, 99),
             decisions_per_sec=throughput,
-            accumulated_expected_utility=accumulated_eu,
+            action_distribution=dict(action_counts),
+            compute_path_distribution=dict(compute_path_counts),
+            seed=seed,
+            backend=backend_name,
+            model=model_name,
+            model_revision=model_rev,
+            commit=_git_commit(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             telemetry_log=telemetry_logs,
         )
 
+        if output_path:
+            report.save_json(output_path)
+
         if console:
             console.print("\n[bold red]========================================================================[/bold red]")
-            console.print(f"[bold red]            VIZDOOM RESEARCH EVALUATION BENCHMARK SCORECARD             [/bold red]")
+            console.print("[bold red]            VIZDOOM EVALUATION SCORECARD (FACTUAL)                        [/bold red]")
             console.print("[bold red]========================================================================[/bold red]")
-
             table = Table(box=DOUBLE)
             table.add_column("Benchmark Metric", style="bold white")
             table.add_column("Evaluation Result", style="bold yellow")
-            table.add_column("Performance Assessment", style="bold green")
-
-            table.add_row(
-                "SCENARIO TESTED",
-                scenario.upper(),
-                "FARAMA PLATFORM VERIFIED"
-            )
-            table.add_row(
-                "VICTORY / SURVIVAL RATE",
-                f"{episodes_won} / {num_episodes} ({win_rate:.1f}%)",
-                "[bold green]SUPERIOR POLICY[/bold green]" if win_rate >= 60 else "[yellow]SOLID PERFORMANCE[/yellow]"
-            )
-            table.add_row(
-                "MEAN GAME REWARD",
-                f"{mean_rew:+.2f} pts",
-                "POSITIVE NET REWARD" if mean_rew >= 0 else "NEGATIVE TICS COST"
-            )
-            table.add_row(
-                "TOTAL HOSTILES KILLED",
-                f"{total_kills} kills",
-                "TARGET DESTRUCTION VERIFIED"
-            )
-            table.add_row(
-                "MEAN DECISION LATENCY",
-                f"{mean_lat:.2f} ms",
-                f"[bold cyan]{throughput:.1f} decisions / sec[/bold cyan]"
-            )
-            table.add_row(
-                "ACCUMULATED EXPECTED UTILITY",
-                f"{accumulated_eu:+.1f} EU",
-                "[bold green]REGRET-MINIMAL COGNITIVE CONVERGENCE[/bold green]"
-            )
+            table.add_row("SCENARIO", scenario.upper())
+            table.add_row("POLICY", policy_kind.value)
+            table.add_row("OBSERVATION MODE", mode.value)
+            table.add_row("VICTORY CRITERION", criterion)
+            table.add_row("EPISODES (won/total)", f"{episodes_won}/{num_episodes} ({win_rate:.1f}%)")
+            table.add_row("COMPLETION RATE", f"{completion_rate:.1f}%")
+            table.add_row("KILLS (KILLCOUNT)", str(total_kills))
+            table.add_row("DEATHS (DEATHCOUNT)", str(total_deaths))
+            table.add_row("DAMAGE TAKEN", f"{total_damage_taken:.1f}")
+            table.add_row("MEAN REWARD", f"{mean_rew:+.2f}")
+            table.add_row("MEAN LATENCY", f"{mean_lat:.2f} ms")
+            table.add_row("P50/P95/P99 LATENCY", f"{report.p50_latency_ms:.1f}/{report.p95_latency_ms:.1f}/{report.p99_latency_ms:.1f} ms")
+            table.add_row("DECISIONS", str(total_decisions))
+            table.add_row("ABSTENTIONS", str(total_abstentions))
+            table.add_row("BACKEND CALLS", str(total_backend_calls))
+            table.add_row("TOKENS", f"{total_tokens} ({'estimated' if report.tokens_estimated else 'exact'})")
+            table.add_row("BACKEND", f"{backend_name} / {model_name}")
+            table.add_row("SEED", str(seed))
             console.print(table)
 
         return report
