@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from anydecision.core.types import AnswerType, OptionDefinition, ReadoutStrategy
 
@@ -42,6 +42,45 @@ class Question(BaseModel):
         default=None,
         description="Optional preceding context or document text."
     )
+
+    @model_validator(mode="after")
+    def validate_question_structure(self) -> Question:
+        """Validate question invariants, options count, uniqueness, and types."""
+        if not self.text or not self.text.strip():
+            raise ValueError("Question text cannot be empty or blank.")
+
+        if not self.allow_custom_readout:
+            if len(self.options) < 2:
+                raise ValueError(
+                    f"Question requires at least 2 candidate options, got {len(self.options)}. "
+                    "Set allow_custom_readout=True if using custom single-readout hook."
+                )
+
+        keys = [opt.key for opt in self.options]
+        if len(keys) != len(set(keys)):
+            seen = set()
+            duplicates = {k for k in keys if k in seen or seen.add(k)}
+            raise ValueError(f"Duplicate option keys detected: {duplicates}")
+
+        for opt in self.options:
+            if not opt.label or not opt.label.strip():
+                raise ValueError(f"Option key '{opt.key}' has an empty or blank label.")
+
+        if self.answer_type == AnswerType.ORDINAL:
+            ranks = [opt.ordinal_rank for opt in self.options]
+            if any(r is None for r in ranks):
+                raise ValueError("All options in an ORDINAL question must specify an integer ordinal_rank.")
+            if len(ranks) != len(set(ranks)):
+                raise ValueError(f"Duplicate ordinal ranks detected in ORDINAL question: {ranks}")
+
+        if self.answer_type == AnswerType.NUMERIC_SCORE:
+            vals = [opt.numeric_value for opt in self.options]
+            if any(v is None for v in vals):
+                raise ValueError("All options in a NUMERIC_SCORE question must specify numeric_value.")
+            if len(vals) != len(set(vals)):
+                raise ValueError(f"Duplicate numeric values detected in NUMERIC_SCORE question: {vals}")
+
+        return self
 
     def option_keys(self) -> List[str]:
         """Return list of option keys."""
@@ -185,6 +224,10 @@ class Question(BaseModel):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Question:
         """Construct a numeric/scored rating question (e.g. 0 to 10)."""
+        if minimum >= maximum:
+            raise ValueError(f"minimum ({minimum}) must be strictly less than maximum ({maximum})")
+        if step <= 0:
+            raise ValueError(f"step ({step}) must be strictly positive (> 0)")
         values = list(range(minimum, maximum + 1, step))
         labels = [str(v) for v in values]
         qid = question_id or cls.generate_id(text, labels)
@@ -212,6 +255,7 @@ class Question(BaseModel):
         choices: Sequence[str],
         question_id: Optional[str] = None,
         context: Optional[str] = None,
+        threshold: float = 0.5,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Question:
         """Construct a multi-label question where each tag can independently apply."""
@@ -220,6 +264,9 @@ class Question(BaseModel):
         has_multi = any(" " in str(c) for c in choices)
         readout = ReadoutStrategy.MULTI_TOKEN_SEQUENCE if has_multi else ReadoutStrategy.NEXT_TOKEN
 
+        meta = dict(metadata or {})
+        meta["threshold"] = threshold
+
         return cls(
             id=qid,
             text=text,
@@ -227,7 +274,7 @@ class Question(BaseModel):
             options=options,
             readout_strategy=readout,
             context=context,
-            metadata=metadata or {},
+            metadata=meta,
         )
 
     @classmethod

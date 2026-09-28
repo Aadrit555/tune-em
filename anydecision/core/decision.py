@@ -20,6 +20,10 @@ class Decision(BaseModel):
         default=None,
         description="The winning option key, or None if the engine abstained."
     )
+    labels: Optional[List[str]] = Field(
+        default=None,
+        description="Selected active labels for multi-label decisions where P(label_i = true | x) meets threshold."
+    )
     probabilities: Dict[str, float] = Field(
         default_factory=dict,
         description="Normalized probability distribution over all valid candidate keys."
@@ -151,6 +155,11 @@ class Decision(BaseModel):
         """Return a human-readable one-line summary."""
         if self.abstained:
             return f"Decision: ABSTAINED (reason: {self.reason}, risk: {self.risk:.3f}, level: {self.level})"
+        if self.labels is not None:
+            return (
+                f"Decision (multi-label): {self.labels} (confidence: {self.confidence:.2%}, "
+                f"uncertainty: {self.uncertainty:.3f}, level: {self.level}, method: {self.method})"
+            )
         return (
             f"Decision: '{self.answer}' (confidence: {self.confidence:.2%}, "
             f"uncertainty: {self.uncertainty:.3f}, level: {self.level}, method: {self.method})"

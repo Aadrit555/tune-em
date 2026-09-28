@@ -166,6 +166,68 @@ class DecisionEngine:
                 readout_strategy=question.readout_strategy.value,
             )
 
+        if question.answer_type == AnswerType.MULTI_CHOICE:
+            # Independent multi-label Bernoulli evaluation per candidate tag
+            independent_probs: Dict[str, float] = {}
+            threshold = float(question.metadata.get("threshold", 0.5) if question.metadata else 0.5)
+            if min_confidence is not None:
+                threshold = min_confidence
+            backend_calls = 0
+
+            for opt in question.options:
+                sub_prompt = f"{question.text.strip()}\nDoes the attribute or tag '{opt.label}' apply? Answer (yes/no):"
+                backend_calls += 1
+                lp = self.backend.next_token_logprobs(sub_prompt, {"yes": "yes", "no": "no"})
+                binary_probs = normalize_log_probabilities(lp)
+                p_yes = binary_probs.get("yes", 0.5)
+                independent_probs[opt.key] = float(p_yes)
+
+            selected_labels = [opt.key for opt in question.options if independent_probs.get(opt.key, 0.0) >= threshold]
+            selected_labels.sort(key=lambda k: independent_probs[k], reverse=True)
+
+            top_prob = max(independent_probs.values()) if independent_probs else 0.0
+            latency_ms = (time.perf_counter() - start_time) * 1000.0
+
+            # Epistemic/aleatoric uncertainty across multi-label decisions: mean boundary distance
+            boundary_uncertainty = (
+                float(np.mean([1.0 - 2.0 * abs(p - 0.5) for p in independent_probs.values()]))
+                if independent_probs
+                else 0.0
+            )
+
+            diagnostics = Diagnostics(
+                backend=self.metadata.backend_name,
+                latency_ms=latency_ms,
+                model=self.metadata.model_name,
+                level=target_level.value,
+                raw_probabilities=independent_probs,
+                entropy=boundary_uncertainty,
+                risk=float(1.0 - top_prob),
+                number_of_backend_calls=backend_calls,
+            )
+
+            if decision_trace:
+                decision_trace.add_step(
+                    "multilabel_evaluation",
+                    f"Evaluated {len(question.options)} independent tag likelihoods",
+                    independent_probs=independent_probs,
+                    selected_labels=selected_labels,
+                )
+
+            return Decision(
+                answer=", ".join(selected_labels) if selected_labels else "none",
+                labels=selected_labels,
+                probabilities=independent_probs,
+                confidence=top_prob,
+                uncertainty=boundary_uncertainty,
+                level=target_level.value,
+                method="independent_multilabel",
+                diagnostics=diagnostics,
+                backend_calls=backend_calls,
+                latency_ms=latency_ms,
+                trace=decision_trace,
+            )
+
         candidate_strings = {opt.key: opt.label for opt in question.options}
         is_multi_token = question.readout_strategy == ReadoutStrategy.MULTI_TOKEN_SEQUENCE
 
