@@ -25,6 +25,7 @@ from rich.table import Table
 
 from anydecision.core.engine import DecisionEngine
 from anydecision.core.question import Question
+from anydecision.games.ultimate_doom import DEFAULT_WAD_SEARCH_PATHS
 from anydecision.theory.utility import UtilityMatrix
 
 try:
@@ -80,17 +81,47 @@ class ViZDoomDecisionRunner:
         console = Console() if render_console else None
         game = vzd.DoomGame()
 
-        # Check if scenario is a known cfg file in vizdoom scenarios
+        # Auto-resolve WAD path if provided or in default search paths
+        resolved_wad = None
+        if wad_path and os.path.exists(wad_path):
+            resolved_wad = wad_path
+        else:
+            for p in DEFAULT_WAD_SEARCH_PATHS:
+                if os.path.exists(p):
+                    resolved_wad = p
+                    break
+
+        # Check if scenario is an authentic map code (E1M1..E4M9) or a cfg file
         cfg_path = os.path.join(vzd.scenarios_path, f"{scenario}.cfg")
         is_custom_wad_map = False
 
-        if os.path.exists(cfg_path):
-            game.load_config(cfg_path)
-        elif wad_path and os.path.exists(wad_path):
+        if scenario.upper().startswith(("E1M", "E2M", "E3M", "E4M")) and resolved_wad:
             is_custom_wad_map = True
-            game.set_doom_game_path(wad_path)
+            scenario = scenario.upper()
+            game.set_doom_game_path(resolved_wad)
             game.set_doom_map(scenario)
-            # Standard FPS button setup for custom WAD maps
+            game.set_available_buttons([
+                vzd.Button.MOVE_LEFT,
+                vzd.Button.MOVE_RIGHT,
+                vzd.Button.ATTACK,
+                vzd.Button.MOVE_FORWARD,
+                vzd.Button.MOVE_BACKWARD,
+                vzd.Button.TURN_LEFT,
+                vzd.Button.TURN_RIGHT,
+            ])
+            game.set_available_game_variables([
+                vzd.GameVariable.HEALTH,
+                vzd.GameVariable.ARMOR,
+                vzd.GameVariable.SELECTED_WEAPON_AMMO,
+                vzd.GameVariable.KILLCOUNT,
+            ])
+        elif os.path.exists(cfg_path):
+            game.load_config(cfg_path)
+        elif resolved_wad:
+            is_custom_wad_map = True
+            game.set_doom_game_path(resolved_wad)
+            game.set_doom_map("E1M1")
+            scenario = "E1M1"
             game.set_available_buttons([
                 vzd.Button.MOVE_LEFT,
                 vzd.Button.MOVE_RIGHT,
@@ -107,12 +138,17 @@ class ViZDoomDecisionRunner:
                 vzd.GameVariable.KILLCOUNT,
             ])
         else:
-            # Fallback to basic.cfg
             cfg_path = os.path.join(vzd.scenarios_path, "basic.cfg")
             game.load_config(cfg_path)
             scenario = "basic"
 
-        game.set_window_visible(window_visible)
+        if window_visible:
+            game.set_screen_resolution(vzd.ScreenResolution.RES_640X480)
+            game.set_sound_enabled(True)
+            game.set_window_visible(True)
+        else:
+            game.set_window_visible(False)
+
         game.set_labels_buffer_enabled(True)
         game.set_objects_info_enabled(True)
         game.init()
@@ -269,6 +305,9 @@ class ViZDoomDecisionRunner:
                 action_vector = action_map.get(chosen_act, [0] * len(buttons))
                 step_reward = game.make_action(action_vector, frame_skip)
                 ep_reward += step_reward
+
+                if window_visible:
+                    time.sleep(0.045)  # Real-time ~22-25 FPS frame pacing for human viewing
 
                 log_line = (
                     f"Ep {ep} | Step {ep_step:02d} | Action: {chosen_act} | "
