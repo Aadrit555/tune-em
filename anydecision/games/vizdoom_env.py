@@ -66,6 +66,8 @@ class ViZDoomDecisionRunner:
         scenario: str = "basic",
         num_episodes: int = 3,
         wad_path: Optional[str] = None,
+        skill: int = 4,
+        max_steps_per_episode: Optional[int] = None,
         frame_skip: int = 4,
         window_visible: bool = False,
         render_console: bool = True,
@@ -141,6 +143,18 @@ class ViZDoomDecisionRunner:
             cfg_path = os.path.join(vzd.scenarios_path, "basic.cfg")
             game.load_config(cfg_path)
             scenario = "basic"
+
+        # Always ensure critical tactical game variables are registered
+        for var in [
+            vzd.GameVariable.KILLCOUNT,
+            vzd.GameVariable.HEALTH,
+            vzd.GameVariable.ARMOR,
+            vzd.GameVariable.SELECTED_WEAPON_AMMO,
+        ]:
+            if var not in game.get_available_game_variables():
+                game.add_available_game_variable(var)
+
+        game.set_doom_skill(skill)
 
         if window_visible:
             game.set_screen_resolution(vzd.ScreenResolution.RES_800X600)
@@ -225,13 +239,18 @@ class ViZDoomDecisionRunner:
             "Medikit", "Stimpack", "HealthBonus", "ArmorBonus", "Clip", "ShellBox", "RocketBox"
         }
 
-        max_steps_per_ep = 250 if window_visible else 80
+        max_steps_per_ep = max_steps_per_episode if max_steps_per_episode is not None else (1200 if window_visible else 100)
 
         for ep in range(1, num_episodes + 1):
             game.new_episode()
             ep_reward = 0.0
             ep_step = 0
-            ep_kills_start = game.get_game_variable(vzd.GameVariable.KILLCOUNT) if vzd.GameVariable.KILLCOUNT in game.get_available_game_variables() else 0
+            ep_reward_kills = 0
+            ep_kills_start = (
+                int(game.get_game_variable(vzd.GameVariable.KILLCOUNT))
+                if vzd.GameVariable.KILLCOUNT in game.get_available_game_variables()
+                else 0
+            )
 
             if console:
                 console.print(f"[bold cyan]>>> Starting ViZDoom Episode {ep}/{num_episodes}...[/bold cyan]")
@@ -247,26 +266,40 @@ class ViZDoomDecisionRunner:
                 health = game.get_game_variable(vzd.GameVariable.HEALTH) if vzd.GameVariable.HEALTH in game.get_available_game_variables() else 100.0
                 ammo = game.get_game_variable(vzd.GameVariable.SELECTED_WEAPON_AMMO) if vzd.GameVariable.SELECTED_WEAPON_AMMO in game.get_available_game_variables() else 50.0
 
-                # Analyze visual labels from the frame buffer
+                # Analyze visual labels from the frame buffer with live hostile filtering
                 screen_width = game.get_screen_width() or 320
                 screen_center = screen_width / 2.0
-                monsters = [lbl for lbl in (state.labels or []) if lbl.object_name not in ignored_labels]
+                monsters = [
+                    lbl for lbl in (state.labels or [])
+                    if lbl.object_name not in ignored_labels and not lbl.object_name.startswith("Dead")
+                ]
 
                 target_name = "Searching Arena..."
                 target_offset_x = 0.0
                 target_in_crosshair = False
+                target_micro_left = False
+                target_micro_right = False
                 target_left = False
                 target_right = False
 
                 if monsters:
+                    # Prioritize hostiles closest to crosshair center and threatening proximity (scale/height)
+                    monsters.sort(key=lambda m: abs((m.x + m.width / 2.0) - screen_center) - (m.height * 2.0))
                     primary_m = monsters[0]
                     target_name = primary_m.object_name
                     m_center_x = primary_m.x + (primary_m.width / 2.0)
                     target_offset_x = m_center_x - screen_center
+                    offset_ratio = abs(target_offset_x) / max(1.0, float(screen_width))
 
-                    if abs(target_offset_x) <= 30.0:
+                    # Deadband thresholds normalized across all screen resolutions (320x240 to 800x600)
+                    if offset_ratio <= 0.055:
                         target_in_crosshair = True
-                    elif target_offset_x < -30.0:
+                    elif offset_ratio <= 0.12:
+                        if target_offset_x < 0:
+                            target_micro_left = True
+                        else:
+                            target_micro_right = True
+                    elif target_offset_x < 0:
                         target_left = True
                     else:
                         target_right = True
@@ -283,17 +316,17 @@ class ViZDoomDecisionRunner:
                     act_u = act.upper()
                     for sc in scenarios:
                         if act_u == "ATTACK":
-                            val = 85.0 if sc == "target_aligned" else -25.0
+                            val = 95.0 if sc == "target_aligned" else -35.0
                         elif "TURN_LEFT_AND_FIRE" in act_u or "STRAFE_LEFT_AND_FIRE" in act_u:
-                            val = 70.0 if sc in ("target_aligned", "target_to_left") else -15.0
+                            val = 75.0 if sc in ("target_aligned", "target_to_left") else -30.0
                         elif "TURN_RIGHT_AND_FIRE" in act_u or "STRAFE_RIGHT_AND_FIRE" in act_u:
-                            val = 70.0 if sc in ("target_aligned", "target_to_right") else -15.0
+                            val = 75.0 if sc in ("target_aligned", "target_to_right") else -30.0
                         elif "ADVANCE_AND_FIRE" in act_u:
-                            val = 75.0 if sc == "target_aligned" else (30.0 if sc == "tactical_reposition" else 0.0)
+                            val = 80.0 if sc == "target_aligned" else (30.0 if sc == "tactical_reposition" else -10.0)
                         elif "LEFT" in act_u:
-                            val = 60.0 if sc == "target_to_left" else (-20.0 if sc == "target_to_right" else 10.0)
+                            val = 85.0 if sc == "target_to_left" else (-30.0 if sc == "target_to_right" else (-20.0 if sc == "target_aligned" else 50.0))
                         elif "RIGHT" in act_u:
-                            val = 60.0 if sc == "target_to_right" else (-20.0 if sc == "target_to_left" else 10.0)
+                            val = 85.0 if sc == "target_to_right" else (-30.0 if sc == "target_to_left" else (-20.0 if sc == "target_aligned" else 65.0))
                         elif "FORWARD" in act_u:
                             val = 40.0 if sc == "tactical_reposition" else 15.0
                         elif "BACKWARD" in act_u:
@@ -319,13 +352,17 @@ class ViZDoomDecisionRunner:
 
                 # Map visual state probabilities to optimal action selection
                 if target_in_crosshair:
-                    state_probs = {"target_aligned": 0.88, "target_to_left": 0.04, "target_to_right": 0.04, "tactical_reposition": 0.04}
+                    state_probs = {"target_aligned": 0.92, "target_to_left": 0.03, "target_to_right": 0.03, "tactical_reposition": 0.02}
+                elif target_micro_left:
+                    state_probs = {"target_aligned": 0.35, "target_to_left": 0.55, "target_to_right": 0.05, "tactical_reposition": 0.05}
+                elif target_micro_right:
+                    state_probs = {"target_aligned": 0.35, "target_to_left": 0.05, "target_to_right": 0.55, "tactical_reposition": 0.05}
                 elif target_left:
-                    state_probs = {"target_aligned": 0.06, "target_to_left": 0.82, "target_to_right": 0.06, "tactical_reposition": 0.06}
-                elif target_right:
-                    state_probs = {"target_aligned": 0.06, "target_to_left": 0.06, "target_to_right": 0.82, "tactical_reposition": 0.06}
+                    state_probs = {"target_aligned": 0.02, "target_to_left": 0.92, "target_to_right": 0.02, "tactical_reposition": 0.04}
+                elif target_right and monsters:
+                    state_probs = {"target_aligned": 0.02, "target_to_left": 0.02, "target_to_right": 0.92, "tactical_reposition": 0.04}
                 else:
-                    state_probs = {"target_aligned": 0.25, "target_to_left": 0.25, "target_to_right": 0.25, "tactical_reposition": 0.25}
+                    state_probs = {"target_aligned": 0.01, "target_to_left": 0.02, "target_to_right": 0.02, "tactical_reposition": 0.95}
 
                 best_act, best_eu, regret, eus = matrix.select_optimal_action(state_probs)
                 chosen_act = best_act
@@ -336,8 +373,11 @@ class ViZDoomDecisionRunner:
                 step_reward = game.make_action(action_vector, frame_skip)
                 ep_reward += step_reward
 
+                if step_reward >= 1.0:
+                    ep_reward_kills += int(step_reward)
+
                 if window_visible:
-                    time.sleep(0.045)  # Real-time ~22-25 FPS frame pacing for human viewing
+                    time.sleep(0.028)  # Fluid ~35 FPS frame pacing
 
                 log_line = (
                     f"Ep {ep} | Step {ep_step:02d} | Action: {chosen_act} | "
@@ -350,8 +390,13 @@ class ViZDoomDecisionRunner:
                     console.print(f"  {log_line}")
 
             total_rewards.append(ep_reward)
-            ep_kills_end = game.get_game_variable(vzd.GameVariable.KILLCOUNT) if vzd.GameVariable.KILLCOUNT in game.get_available_game_variables() else 0
-            ep_kills = max(0, int(ep_kills_end - ep_kills_start))
+            ep_kills_end = (
+                int(game.get_game_variable(vzd.GameVariable.KILLCOUNT))
+                if vzd.GameVariable.KILLCOUNT in game.get_available_game_variables()
+                else 0
+            )
+            var_kills = max(0, ep_kills_end - ep_kills_start)
+            ep_kills = max(var_kills, ep_reward_kills)
             total_kills += ep_kills
 
             # A positive total reward or kill indicates episode victory

@@ -231,6 +231,8 @@ def real_doom(
 def vizdoom_cmd(
     scenario: str = typer.Option("defend_the_center", "--scenario", "-s", help="ViZDoom scenario: defend_the_center, defend_the_line, deadly_corridor, basic, etc."),
     episodes: int = typer.Option(3, "--episodes", "-e", help="Number of benchmark episodes"),
+    skill: int = typer.Option(4, "--skill", "-k", help="Doom skill level: 1 to 5 (default 4 = Ultra-Violence)"),
+    max_steps: Optional[int] = typer.Option(None, "--max-steps", help="Max steps per episode (default: 1200 if rendered, 100 headless)"),
     wad: Optional[str] = typer.Option(None, "--wad", "-w", help="Optional path to custom DOOM.WAD binary"),
     model: str = typer.Option("mock", "--model", help="Decision model backend"),
     render: bool = typer.Option(False, "--render", help="Render graphical game window"),
@@ -242,6 +244,8 @@ def vizdoom_cmd(
         engine=engine,
         scenario=scenario,
         num_episodes=episodes,
+        skill=skill,
+        max_steps_per_episode=max_steps,
         wad_path=wad,
         window_visible=render,
         render_console=True,
