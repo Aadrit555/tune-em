@@ -57,3 +57,34 @@ def test_ood_diagnostics():
     assert diag.is_shift_suspected is True
     assert diag.warning is not None
 
+
+def test_decision_probability_semantics_and_uncertainty():
+    from anydecision.core.engine import DecisionEngine
+    from anydecision.core.question import Question
+
+    engine = DecisionEngine(model="mock")
+    q = Question.choice("Choose optimal routing:", ["edge", "cloud", "hybrid"])
+    decision = engine.decide(q)
+
+    # Test separation of conditional choice probability vs raw token probability
+    assert decision.choice_probability is not None
+    assert 0.0 <= decision.choice_probability <= 1.0
+    assert decision.confidence == decision.choice_probability
+
+    # Choice margin (top1 - top2)
+    assert decision.choice_margin is not None
+    assert decision.choice_margin >= 0.0
+
+    # Predictive entropy in nats
+    assert decision.predictive_entropy is not None
+    assert decision.predictive_entropy >= 0.0
+
+    # Calibrated error estimate
+    assert decision.calibrated_error_estimate is not None
+    assert 0.0 <= decision.calibrated_error_estimate <= 1.0
+
+    # Raw vocab logprob and token probability
+    assert decision.raw_vocab_logprob is not None
+    assert decision.model_token_probability is not None
+    assert 0.0 <= decision.model_token_probability <= 1.0
+

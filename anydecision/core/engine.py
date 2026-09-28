@@ -504,10 +504,26 @@ class DecisionEngine:
                 diagnostics.decision_emergence_layer = traj_res.decision_emergence_layer
                 diagnostics.layer_trajectory = traj_res.model_dump()
 
+        # Choice margin and predictive entropy
+        sorted_probs = [v for k, v in sorted_candidates]
+        margin = float(sorted_probs[0] - sorted_probs[1]) if len(sorted_probs) > 1 else float(sorted_probs[0])
+        pred_entropy = float(entropy_nats)
+
+        # Raw vocabulary logprob and model token probability if available
+        last_raw = getattr(self.backend, "_last_raw_vocab_lps", {})
+        raw_vocab_lp = last_raw.get(top_answer) if top_answer is not None else None
+        raw_token_prob = float(np.exp(raw_vocab_lp)) if raw_vocab_lp is not None else None
+
         return Decision(
             answer=final_answer,
             probabilities=effective_probs,
             confidence=top_confidence,
+            choice_probability=top_confidence,
+            raw_vocab_logprob=raw_vocab_lp,
+            model_token_probability=raw_token_prob,
+            choice_margin=margin,
+            predictive_entropy=pred_entropy,
+            calibrated_error_estimate=posterior_risk,
             uncertainty=uncertainty,
             level=target_level.value,
             method=method_str,

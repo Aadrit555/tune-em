@@ -53,6 +53,7 @@ class BaseBackend(ABC):
     def __init__(self) -> None:
         self.cache_stats = PrefixCacheStats()
         self._prefix_cache: Dict[str, Any] = {}
+        self._last_raw_vocab_lps: Dict[str, float] = {}
 
     @abstractmethod
     def get_metadata(self) -> ModelMetadata:

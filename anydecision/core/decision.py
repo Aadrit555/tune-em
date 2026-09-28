@@ -32,6 +32,30 @@ class Decision(BaseModel):
         default=0.0,
         description="Probability or calibrated score assigned to the top choice [0.0, 1.0]."
     )
+    choice_probability: Optional[float] = Field(
+        default=None,
+        description="Probability conditional on candidate set P(candidate | prompt, candidate set)."
+    )
+    raw_vocab_logprob: Optional[float] = Field(
+        default=None,
+        description="Raw model log-probability in unconstrained vocabulary log P(token | prompt)."
+    )
+    model_token_probability: Optional[float] = Field(
+        default=None,
+        description="Raw model probability in unconstrained vocabulary exp(raw_vocab_logprob)."
+    )
+    choice_margin: Optional[float] = Field(
+        default=None,
+        description="Probability difference between top-1 and top-2 candidate choices P(top_1) - P(top_2)."
+    )
+    predictive_entropy: Optional[float] = Field(
+        default=None,
+        description="Shannon entropy of the candidate distribution in nats."
+    )
+    calibrated_error_estimate: Optional[float] = Field(
+        default=None,
+        description="Calibrated expected posterior error rate or empirical risk estimate."
+    )
     uncertainty: float = Field(
         default=0.0,
         description="Epistemic or aleatoric uncertainty measure (e.g. 1.0 - confidence or normalized entropy)."

@@ -85,7 +85,12 @@ class MockBackend(BaseBackend):
         logit_arr = np.array([logits[k] for k in keys], dtype=np.float64)
         max_l = np.max(logit_arr)
         log_z = max_l + np.log(np.sum(np.exp(logit_arr - max_l)))
-        log_probs = log_arr = logit_arr - log_z
+        log_probs = logit_arr - log_z
+
+        self._last_raw_vocab_lps = {
+            k: float(-abs(self._hash_score(prompt, f"vocab::{k}")) - 1.0)
+            for k in candidate_strings
+        }
 
         return {k: float(lp) for k, lp in zip(keys, log_probs)}
 
@@ -107,9 +112,7 @@ class MockBackend(BaseBackend):
         candidate_strings: Dict[str, str],
     ) -> Dict[str, Any]:
         cond = self.next_token_logprobs(prompt, candidate_strings)
-        raw = {}
-        for k, v in candidate_strings.items():
-            raw[k] = float(self._hash_score(prompt, f"vocab::{k}") - 4.0)
+        raw = self._last_raw_vocab_lps
         return {
             "conditional_logprobs": cond,
             "raw_vocab_logprobs": raw,
