@@ -79,7 +79,8 @@ class DecisionEngine:
 
     def decide(
         self,
-        question: Question,
+        question: Union[Question, str],
+        choices: Optional[Sequence[str]] = None,
         level: Optional[Union[str, DecisionLevel]] = None,
         min_confidence: Optional[float] = None,
         target_error: Optional[float] = None,
@@ -102,7 +103,8 @@ class DecisionEngine:
         """Execute a typed decision for a given question.
 
         Args:
-            question: Typed Question definition with candidate options.
+            question: Typed Question definition or prompt string.
+            choices: Optional sequence of candidate choices if question is a string.
             level: 'L0' (raw), 'L1' (zero-label debiasing), 'L2' (calibrated).
             min_confidence: Threshold on top confidence below which engine abstains.
             target_error: Maximum acceptable risk / error rate before abstaining.
@@ -120,6 +122,11 @@ class DecisionEngine:
         Returns:
             Strongly typed Decision object with optimal action and expected utilities.
         """
+        if isinstance(question, str):
+            if choices is None:
+                raise ValueError("When providing a string prompt to decide(), candidate 'choices' must be provided.")
+            question = Question.choice(text=question, choices=list(choices))
+
         if adaptive:
             return self.decide_adaptive(
                 question=question,
@@ -459,6 +466,30 @@ class DecisionEngine:
             diagnostics=diagnostics,
             trace=decision_trace,
         )
+
+    def choose(
+        self,
+        prompt: str,
+        choices: Sequence[str],
+        level: Optional[Union[str, DecisionLevel]] = None,
+        **kwargs: Any,
+    ) -> Decision:
+        """Universal non-autoregressive decision interface (analogous to von.choose).
+
+        Evaluates any typed question or natural language prompt across any arbitrary list
+        of candidate choices, directly extracting normalized probabilities from model representations.
+
+        Args:
+            prompt: Question, context, or classification prompt string.
+            choices: Arbitrary list of candidate string options (any length or count).
+            level: 'L0' (raw single forward pass), 'L1' (zero-label debiased), 'L2' (calibrated).
+            **kwargs: Extra parameters passed to decide() (e.g. actions, utility_matrix, adaptive).
+
+        Returns:
+            Structured Decision object with top answer, probabilities, confidence, and uncertainty.
+        """
+        q = Question.choice(text=prompt, choices=list(choices))
+        return self.decide(q, level=level, **kwargs)
 
     def analyze_layer_trajectory(
         self,

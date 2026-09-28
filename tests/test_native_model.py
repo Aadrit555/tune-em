@@ -89,3 +89,4 @@ def test_fast_option_scorer_latency():
 
     # Ensure lightning fast throughput (< 5ms per scoring call)
     assert avg_latency_ms < 10.0, f"Average latency too high: {avg_latency_ms:.2f} ms"
+

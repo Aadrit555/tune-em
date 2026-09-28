@@ -134,3 +134,4 @@ class FastOptionScorer:
         probs = exp_l / np.sum(exp_l)
 
         return {opt: float(p) for opt, p in zip(candidate_options, probs)}
+
