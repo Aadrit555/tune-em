@@ -8,7 +8,16 @@ import numpy as np
 import torch
 
 from anydecision.backends.base import BaseBackend, ModelMetadata
-from anydecision.scoring.sequence import SequenceScorer, SequenceScoringMethod
+from anydecision.scoring.candidate_tokenizer import (
+    CandidateTokenInfo,
+    requires_sequence_scoring_for_candidates,
+    tokenize_candidate_set,
+)
+from anydecision.scoring.sequence import (
+    SequenceScoreResult,
+    SequenceScorer,
+    SequenceScoringMethod,
+)
 
 
 class TransformersBackend(BaseBackend):
@@ -68,15 +77,7 @@ class TransformersBackend(BaseBackend):
         candidate_strings: Dict[str, str],
     ) -> bool:
         """Check whether any candidate encodes to more than 1 token in the context of the prompt."""
-        prompt_ids = self.tokenizer.encode(prompt, add_special_tokens=False)
-        len_prompt = len(prompt_ids)
-        for text in candidate_strings.values():
-            full_text = prompt.rstrip() + " " + text.lstrip()
-            full_ids = self.tokenizer.encode(full_text, add_special_tokens=False)
-            candidate_token_ids = full_ids[len_prompt:]
-            if len(candidate_token_ids) != 1:
-                return True
-        return False
+        return requires_sequence_scoring_for_candidates(self.tokenizer, prompt, candidate_strings)
 
     def next_token_logprobs_detailed(
         self,
@@ -91,12 +92,18 @@ class TransformersBackend(BaseBackend):
 
         vocab_logprobs = torch.log_softmax(next_logits, dim=-1).cpu().numpy()
 
-        raw_vocab_lps = {}
-        for key, text in candidate_strings.items():
-            tokens_space = self.tokenizer.encode(" " + text.strip(), add_special_tokens=False)
-            tokens_raw = self.tokenizer.encode(text.strip(), add_special_tokens=False)
-            token_id = tokens_space[0] if tokens_space else (tokens_raw[0] if tokens_raw else 0)
-            raw_vocab_lps[key] = float(vocab_logprobs[token_id])
+        candidate_infos = tokenize_candidate_set(self.tokenizer, prompt, candidate_strings)
+        raw_vocab_lps: Dict[str, float] = {}
+
+        for key, info in candidate_infos.items():
+            if info.candidate_token_ids:
+                token_id = info.candidate_token_ids[0]
+                if 0 <= token_id < len(vocab_logprobs):
+                    raw_vocab_lps[key] = float(vocab_logprobs[token_id])
+                else:
+                    raw_vocab_lps[key] = -1e9
+            else:
+                raw_vocab_lps[key] = -1e9
 
         keys = list(raw_vocab_lps.keys())
         scores = np.array([raw_vocab_lps[k] for k in keys], dtype=np.float64)
@@ -107,6 +114,7 @@ class TransformersBackend(BaseBackend):
         return {
             "conditional_logprobs": {k: float(s) for k, s in zip(keys, norm_scores)},
             "raw_vocab_logprobs": raw_vocab_lps,
+            "candidate_token_infos": candidate_infos,
         }
 
     def next_token_logprobs(
@@ -120,56 +128,70 @@ class TransformersBackend(BaseBackend):
         res = self.next_token_logprobs_detailed(prompt, candidate_strings)
         return res["conditional_logprobs"]
 
-    def sequence_logprobs(
+    def sequence_logprobs_detailed(
         self,
         prompt: str,
         candidate_strings: Dict[str, str],
         scoring_method: str = "length_normalized",
-    ) -> Dict[str, float]:
+    ) -> Dict[str, Any]:
+        """Compute exact joint log-probabilities and length-penalized sequence scores."""
         scorer = SequenceScorer(
             method=SequenceScoringMethod(scoring_method)
             if scoring_method in SequenceScoringMethod._value2member_map_
             else SequenceScoringMethod.LENGTH_NORMALIZED
         )
 
-        prompt_ids = self.tokenizer.encode(prompt, add_special_tokens=False)
-        len_prompt = len(prompt_ids)
-
-        candidate_scores = {}
+        tokens_info = tokenize_candidate_set(self.tokenizer, prompt, candidate_strings)
+        score_breakdowns: Dict[str, SequenceScoreResult] = {}
 
         with torch.no_grad():
-            for key, text in candidate_strings.items():
-                full_text = prompt.rstrip() + " " + text.lstrip()
-                full_ids = self.tokenizer.encode(full_text, add_special_tokens=False)
-                candidate_token_ids = full_ids[len_prompt:]
-
-                if not candidate_token_ids:
-                    candidate_scores[key] = -1e9
+            for key, info in tokens_info.items():
+                if not info.candidate_token_ids:
+                    score_breakdowns[key] = scorer.score_sequence([])
                     continue
 
-                input_tensor = torch.tensor([full_ids], device=self.device)
+                input_tensor = torch.tensor([info.full_token_ids], device=self.device)
                 outputs = self.model(input_tensor)
-                logits = outputs.logits[0]  # [seq_len, vocab_size]
+                logits = outputs.logits[0].to(torch.float32)  # [seq_len, vocab_size]
                 log_probs = torch.log_softmax(logits, dim=-1)
 
-                # For token at pos t in candidate, log P(tok_t | tok_{<t}) is at logits index (t-1)
-                token_lps = []
-                for idx, tok_id in enumerate(candidate_token_ids):
-                    logit_pos = len_prompt + idx - 1
-                    if logit_pos >= 0 and logit_pos < logits.shape[0]:
+                token_lps: List[float] = []
+                for idx, tok_id in enumerate(info.candidate_token_ids):
+                    # For token at pos in sequence, log P(tok | tok_{<pos}) is located at logits[pos - 1]
+                    pos = info.prompt_token_count + idx
+                    logit_pos = pos - 1
+                    if 0 <= logit_pos < logits.shape[0]:
                         lp = float(log_probs[logit_pos, tok_id].item())
                         token_lps.append(lp)
+                    else:
+                        token_lps.append(-1e9)
 
-                candidate_scores[key] = scorer.score_tokens(token_lps)
+                score_breakdowns[key] = scorer.score_sequence(token_lps)
 
-        # Normalize over candidates
-        keys = list(candidate_scores.keys())
-        scores = np.array([candidate_scores[k] for k in keys], dtype=np.float64)
+        keys = list(score_breakdowns.keys())
+        scores = np.array([score_breakdowns[k].score for k in keys], dtype=np.float64)
         max_s = np.max(scores)
         log_z = max_s + np.log(np.sum(np.exp(scores - max_s)))
         norm_scores = scores - log_z
 
-        return {k: float(s) for k, s in zip(keys, norm_scores)}
+        return {
+            "conditional_logprobs": {k: float(s) for k, s in zip(keys, norm_scores)},
+            "candidate_scores": score_breakdowns,
+            "joint_logprobs": {k: score_breakdowns[k].joint_logprob for k in keys},
+            "mean_logprobs": {k: score_breakdowns[k].mean_logprob for k in keys},
+            "length_normalized_scores": {k: score_breakdowns[k].length_normalized_score for k in keys},
+            "token_infos": tokens_info,
+            "scoring_method": scorer.method.value,
+        }
+
+    def sequence_logprobs(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+        scoring_method: str = "length_normalized",
+    ) -> Dict[str, float]:
+        res = self.sequence_logprobs_detailed(prompt, candidate_strings, scoring_method)
+        return res["conditional_logprobs"]
 
     def batch_next_token_logprobs(
         self,
@@ -192,13 +214,18 @@ class TransformersBackend(BaseBackend):
         vocab_logprobs = torch.log_softmax(last_logits, dim=-1).cpu().numpy()
 
         results = []
-        for b_idx, candidate_strings in enumerate(candidate_strings_list):
-            cand_scores = {}
-            for key, text in candidate_strings.items():
-                tokens_space = self.tokenizer.encode(" " + text.strip(), add_special_tokens=False)
-                tokens_raw = self.tokenizer.encode(text.strip(), add_special_tokens=False)
-                token_id = tokens_space[0] if tokens_space else (tokens_raw[0] if tokens_raw else 0)
-                cand_scores[key] = float(vocab_logprobs[b_idx, token_id])
+        for b_idx, (p_text, candidate_strings) in enumerate(zip(prompts, candidate_strings_list)):
+            cand_infos = tokenize_candidate_set(self.tokenizer, p_text, candidate_strings)
+            cand_scores: Dict[str, float] = {}
+            for key, info in cand_infos.items():
+                if info.candidate_token_ids:
+                    token_id = info.candidate_token_ids[0]
+                    if 0 <= token_id < vocab_logprobs.shape[1]:
+                        cand_scores[key] = float(vocab_logprobs[b_idx, token_id])
+                    else:
+                        cand_scores[key] = -1e9
+                else:
+                    cand_scores[key] = -1e9
 
             keys = list(cand_scores.keys())
             scores = np.array([cand_scores[k] for k in keys], dtype=np.float64)
@@ -208,4 +235,3 @@ class TransformersBackend(BaseBackend):
             results.append({k: float(s) for k, s in zip(keys, norm_scores)})
 
         return results
-

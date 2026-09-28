@@ -134,30 +134,59 @@ class MockBackend(BaseBackend):
             else SequenceScoringMethod.LENGTH_NORMALIZED
         )
 
-        res = {}
+        res = self.sequence_logprobs_detailed(prompt, candidate_strings, scoring_method)
+        return res["conditional_logprobs"]
+
+    def sequence_logprobs_detailed(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+        scoring_method: str = "length_normalized",
+    ) -> Dict[str, Any]:
+        import re
+        from anydecision.scoring.sequence import SequenceScoreResult
+        if self.simulated_latency_ms > 0:
+            time.sleep(self.simulated_latency_ms / 1000.0)
+
+        self._check_prefix_cache(prompt)
+        scorer = SequenceScorer(
+            method=SequenceScoringMethod(scoring_method)
+            if scoring_method in SequenceScoringMethod._value2member_map_
+            else SequenceScoringMethod.LENGTH_NORMALIZED
+        )
+
+        score_breakdowns: Dict[str, SequenceScoreResult] = {}
         for key, text in candidate_strings.items():
-            # Tokenize into whitespace words
-            tokens = text.split()
-            # Generate simulated per-token log probabilities
+            # Sub-tokenization splitting words and punctuation
+            tokens = re.findall(r"[A-Za-z0-9]+|[^\w\s]", text)
+            if not tokens:
+                score_breakdowns[key] = scorer.score_sequence([])
+                continue
+
             token_lps = []
             for t_idx, tok in enumerate(tokens):
                 score = self._hash_score(f"{prompt}>>{tok}_{t_idx}")
-                # Convert to negative logprob [-0.05, -3.5]
                 lp = -abs(score) - 0.2
                 if tok.lower() in prompt.lower():
                     lp = max(-0.05, lp + 1.5)
                 token_lps.append(lp)
 
-            res[key] = scorer.score_tokens(token_lps)
+            score_breakdowns[key] = scorer.score_sequence(token_lps)
 
-        # Log-softmax over candidates
-        keys = list(res.keys())
-        scores = np.array([res[k] for k in keys], dtype=np.float64)
+        keys = list(score_breakdowns.keys())
+        scores = np.array([score_breakdowns[k].score for k in keys], dtype=np.float64)
         max_s = np.max(scores)
         log_z = max_s + np.log(np.sum(np.exp(scores - max_s)))
-        norm_log_scores = scores - log_z
+        norm_scores = scores - log_z
 
-        return {k: float(lp) for k, lp in zip(keys, norm_log_scores)}
+        return {
+            "conditional_logprobs": {k: float(s) for k, s in zip(keys, norm_scores)},
+            "candidate_scores": score_breakdowns,
+            "joint_logprobs": {k: score_breakdowns[k].joint_logprob for k in keys},
+            "mean_logprobs": {k: score_breakdowns[k].mean_logprob for k in keys},
+            "length_normalized_scores": {k: score_breakdowns[k].length_normalized_score for k in keys},
+            "scoring_method": scorer.method.value,
+        }
 
     def batch_next_token_logprobs(
         self,
