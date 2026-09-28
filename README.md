@@ -247,9 +247,33 @@ anydecision inspect-artifact artifacts/support_router_head.json
 # 4. Start production FastAPI HTTP service
 anydecision serve --port 8000
 
-# 5. Launch interactive Gradio research demo
+# 5. Launch interactive Linux terminal-based UI (TUI)
+anydecision tui
+
+# 6. Launch interactive Gradio research demo
 anydecision demo --port 7860
 ```
+
+---
+
+## Interactive Terminal UI (TUI)
+
+Launch the full-screen terminal-based UI with:
+
+```bash
+anydecision tui
+# or
+tune-em-tui
+# or
+python -m anydecision tui
+```
+
+The Terminal UI features:
+- **Decision Studio**: Interactive question evaluator with ASCII probability meters, Expected Utility action policies, and layer emergence detection.
+- **Economics Benchmark Suite**: Evaluate Quality/Compute, Quality/Dollar, Safe Decisions/sec, and Latency vs Accuracy curves.
+- **Layer-Trajectory Inspector**: Depth analysis across 32 transformer layers tracing confidence growth and representation convergence.
+- **Active Calibration & Drift Monitor**: High-information candidate selection and real-time distribution drift alerts with adaptive threshold tightening.
+- **Security & Injection Auditor**: Automated prompt injection test suite verifying boundary quarantine defense.
 
 ---
 

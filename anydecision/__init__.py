@@ -67,6 +67,7 @@ from anydecision.representations.trajectory import (
 )
 from anydecision.theory.compiler import CompiledExecutionPlan, DecisionCompiler
 from anydecision.theory.utility import UtilityMatrix
+from anydecision.tui.app import TerminalUI, run_tui
 
 __all__ = [
     "__version__",
@@ -113,6 +114,7 @@ __all__ = [
     "SelectiveConformalPredictor",
     "SelectiveConformalResult",
     "TemperatureScaling",
+    "TerminalUI",
     "UtilityMatrix",
     "VectorScaling",
     "compute_adaptive_ece",
@@ -120,6 +122,7 @@ __all__ = [
     "compute_ece",
     "compute_nll",
     "load_calibration_artifact",
+    "run_tui",
     "save_calibration_artifact",
 ]
 

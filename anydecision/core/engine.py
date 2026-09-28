@@ -97,6 +97,7 @@ class DecisionEngine:
         risk_limit: Optional[float] = None,
         coverage_target: Optional[float] = None,
         group_id: Optional[str] = None,
+        context: Optional[Any] = None,
     ) -> Decision:
         """Execute a typed decision for a given question.
 
@@ -161,6 +162,26 @@ class DecisionEngine:
         candidate_strings = {opt.key: opt.label for opt in question.options}
         is_multi_token = question.readout_strategy == ReadoutStrategy.MULTI_TOKEN_SEQUENCE
 
+        # Check for semantic aliases
+        semantic_registry = None
+        has_aliases = any(
+            bool(opt.metadata and opt.metadata.get("aliases"))
+            for opt in question.options
+        )
+        if has_aliases:
+            from anydecision.core.semantic_option import SemanticOption, SemanticOptionRegistry
+            s_opts = [
+                SemanticOption(
+                    id=opt.key,
+                    label=opt.label,
+                    aliases=opt.metadata.get("aliases", []),
+                    prior_probability=opt.metadata.get("prior_probability"),
+                )
+                for opt in question.options
+            ]
+            semantic_registry = SemanticOptionRegistry(s_opts)
+            candidate_strings = semantic_registry.expand_candidate_strings()
+
         # Build prompt templates
         template_objs: List[PromptTemplate] = []
         if templates:
@@ -191,10 +212,14 @@ class DecisionEngine:
 
         for t_idx, tmpl in enumerate(template_objs):
             for p_idx, order in enumerate(orderings):
-                prompt = tmpl.render(question, option_order=order)
+                if context is not None and hasattr(context, "render_isolated_prompt"):
+                    opts_formatted = "\n".join(f"- {opt.label}" for opt in question.options)
+                    prompt = context.render_isolated_prompt(question.text, opts_formatted)
+                else:
+                    prompt = tmpl.render(question, option_order=order)
                 backend_calls += 1
 
-                if is_multi_token:
+                if is_multi_token or has_aliases:
                     # Multi-token sequence scoring
                     logprobs = self.backend.sequence_logprobs(
                         prompt, candidate_strings, scoring_method=scoring_method
@@ -204,6 +229,10 @@ class DecisionEngine:
                     logprobs = self.backend.next_token_logprobs(prompt, candidate_strings)
 
                 probs = normalize_log_probabilities(logprobs)
+                if semantic_registry is not None:
+                    probs = semantic_registry.aggregate_alias_probabilities(probs, method="sum")
+                    probs = semantic_registry.apply_prior_correction(probs)
+
                 run_distributions.append(probs)
 
                 if decision_trace:

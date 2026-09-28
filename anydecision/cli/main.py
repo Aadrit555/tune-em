@@ -166,3 +166,12 @@ def demo(
     from anydecision.demo.app import launch_demo
     launch_demo(server_port=port, share=share)
 
+
+@app.command()
+def tui(
+    model: str = typer.Option("mock", "--model", "-m", help="Underlying model or backend ('mock', HF repo, or vLLM)"),
+) -> None:
+    """Launch the interactive Linux terminal-based UI (TUI)."""
+    from anydecision.tui.app import run_tui
+    run_tui(model=model)
+
