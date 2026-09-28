@@ -214,11 +214,10 @@ class ActiveCalibrationBenchmark:
         active_selected = [s for _, s in scored_pairs[:budget]]
         active_ids = [s.question.id for s in active_selected]
 
-        # 2. Random Selection Baseline
+        # 2. Random Selection Baseline (fixed seed for reproducibility)
         rng = np.random.RandomState(42)
-        shuffled = list(samples).copy()
-        rng.shuffle(shuffled)
-        random_selected = shuffled[:budget]
+        order = rng.permutation(len(samples))
+        random_selected = [samples[i] for i in order[:budget]]
 
         # Remaining test set (samples not in either active or random to test generalizability)
         held_out_active = [s for s in samples if s.question.id not in active_ids]

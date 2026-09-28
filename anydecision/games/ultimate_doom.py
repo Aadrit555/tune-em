@@ -15,7 +15,7 @@ from pathlib import Path
 import struct
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from rich.box import DOUBLE
 from rich.console import Console
 from rich.table import Table
@@ -23,7 +23,7 @@ from rich.table import Table
 from anydecision.core.engine import DecisionEngine
 
 # Authentic Doom entity type mappings (id Software Doom Bible / engine source)
-DOOM_ENTITY_DEFS = {
+DOOM_ENTITY_DEFS: Dict[int, Dict[str, Any]] = {
     # Player spawns
     1: {"name": "Player 1 Start", "category": "player", "hp": 100, "threat": "NONE"},
     # Monsters
@@ -225,17 +225,17 @@ class UltimateDoomWadParser:
                 continue
 
             entity = RealWadEntity(
-                type_id=tid,
-                name=info["name"],
-                category=info["category"],
-                x=x,
-                y=y,
-                distance_to_player=dist,
-                angle=ang,
-                flags=flg,
-                hp=info.get("hp", 0),
-                threat=info.get("threat", "NONE"),
-                base_dmg=info.get("base_dmg", info.get("dmg", 0)),
+                type_id=int(tid),
+                name=str(info["name"]),
+                category=str(info["category"]),
+                x=float(x),
+                y=float(y),
+                distance_to_player=float(dist),
+                angle=int(ang),
+                flags=int(flg),
+                hp=int(info.get("hp", 0) or 0),
+                threat=str(info.get("threat", "NONE")),
+                base_dmg=int(info.get("base_dmg", info.get("dmg", 0)) or 0),
             )
 
             if entity.category == "monster":
