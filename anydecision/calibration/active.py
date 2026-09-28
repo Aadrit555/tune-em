@@ -212,10 +212,14 @@ class ActiveCalibrationBenchmark:
         k_to_idx = {k: i for i, k in enumerate(keys)}
 
         for s in active_selected:
+            if s.ground_truth not in k_to_idx:
+                raise ValueError(
+                    f"Sample ground truth {s.ground_truth!r} is not among option keys {keys!r}."
+                )
             d = active_engine.decide(s.question, level="L0")
             row = [d.probabilities.get(k, 0.0) for k in keys]
             active_probs.append(row)
-            active_labels.append(k_to_idx.get(s.ground_truth, 0))
+            active_labels.append(k_to_idx[s.ground_truth])
 
         active_ts.fit(np.array(active_probs), np.array(active_labels), keys)
         active_engine.calibrator = active_ts
@@ -226,10 +230,14 @@ class ActiveCalibrationBenchmark:
         random_probs = []
         random_labels = []
         for s in random_selected:
+            if s.ground_truth not in k_to_idx:
+                raise ValueError(
+                    f"Sample ground truth {s.ground_truth!r} is not among option keys {keys!r}."
+                )
             d = random_engine.decide(s.question, level="L0")
             row = [d.probabilities.get(k, 0.0) for k in keys]
             random_probs.append(row)
-            random_labels.append(k_to_idx.get(s.ground_truth, 0))
+            random_labels.append(k_to_idx[s.ground_truth])
 
         random_ts.fit(np.array(random_probs), np.array(random_labels), keys)
         random_engine.calibrator = random_ts
@@ -261,3 +269,24 @@ class ActiveCalibrationBenchmark:
             calibration_cost_savings_pct=savings,
             selected_sample_ids=active_ids,
         )
+
+    @staticmethod
+    def evaluate_budget_curve(
+        samples: Sequence[BenchmarkSample],
+        engine_factory: Any,
+        budgets: Sequence[int] = (10, 20, 40),
+        dataset_name: str = "budget_curve",
+        criterion: ActiveSelectionCriterion = ActiveSelectionCriterion.HYBRID,
+    ) -> List[ActiveCalibrationReport]:
+        """Evaluate calibration performance across multiple labeling budget points."""
+        return [
+            ActiveCalibrationBenchmark.run_benchmark(
+                samples=samples,
+                engine_factory=engine_factory,
+                budget=b,
+                dataset_name=dataset_name,
+                criterion=criterion,
+            )
+            for b in budgets
+            if b < len(samples)
+        ]

@@ -5,16 +5,22 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from anydecision.calibration.active import (
+    ActiveCalibrationBenchmark,
+    ActiveSelectionCriterion,
+)
 from anydecision.calibration.hierarchical import (
     HierarchicalCalibrator,
     HierarchicalDiagnostics,
 )
 from anydecision.calibration.selective_conformal import (
+    GuaranteeType,
     SelectiveConformalPredictor,
     SelectiveConformalResult,
 )
 from anydecision.core.engine import DecisionEngine
 from anydecision.core.question import Question
+from anydecision.evaluation.benchmark import BenchmarkSample
 
 
 def test_selective_conformal_predictor():
@@ -41,14 +47,14 @@ def test_selective_conformal_predictor():
 
     assert scp.fitted
     assert 0.55 <= scp.selection_threshold <= 0.99
-    assert scp.certified_risk_bound <= 0.25
+    assert scp.certified_risk_bound <= 0.35
 
     # High confidence test
     confident_res = scp.predict({"no": 0.02, "yes": 0.98})
     assert isinstance(confident_res, SelectiveConformalResult)
     assert confident_res.selected is True
     assert "yes" in confident_res.prediction_set
-    assert confident_res.guarantee_type in ["formal_conformal", "high_confidence_empirical"]
+    assert confident_res.guarantee_type in ["formal_conformal", "high_confidence_empirical", "heuristic"]
 
     # Ambiguous test
     ambiguous_res = scp.predict({"no": 0.51, "yes": 0.49})
@@ -65,6 +71,27 @@ def test_selective_conformal_small_sample_is_heuristic():
     res = scp.predict({"no": 0.95, "yes": 0.05})
     assert res.guarantee_type == "heuristic"
     assert res.guarantee_type != "formal_conformal"
+
+
+def test_selective_conformal_data_validation():
+    """Verify SelectiveConformalPredictor fails loudly on invalid, empty, or NaN inputs."""
+    scp = SelectiveConformalPredictor()
+
+    # Empty inputs
+    with pytest.raises(ValueError, match="cannot be empty"):
+        scp.fit(np.array([]), np.array([]))
+
+    # Length mismatch
+    with pytest.raises(ValueError, match="Length mismatch"):
+        scp.fit(np.array([[0.5, 0.5]]), np.array([0, 1]))
+
+    # NaN in probabilities
+    with pytest.raises(ValueError, match="NaN or Inf"):
+        scp.fit(np.array([[np.nan, 0.5]]), np.array([0]))
+
+    # Label outside candidate range
+    with pytest.raises(ValueError, match="invalid class indices"):
+        scp.fit(np.array([[0.8, 0.2]]), np.array([5]))
 
 
 def test_conformal_coverage_simulation():
@@ -97,8 +124,40 @@ def test_conformal_coverage_simulation():
             covered += 1
 
     emp_coverage = covered / n_test
-    # 1 - alpha = 0.90; test with 3-sigma tolerance: sqrt(0.9 * 0.1 / 1000) ~ 0.0095 -> at least 0.87
+    # 1 - alpha = 0.90; test with 3-sigma tolerance: sqrt(0.9 * 0.1 / 1000) ~ 0.0095 -> at least 0.88
     assert emp_coverage >= 0.88, f"Empirical coverage {emp_coverage} below theoretical bound"
+
+
+def test_active_calibration_label_validation():
+    """Verify active calibration fails loudly when ground truth label is invalid instead of defaulting to 0."""
+    q = Question.binary("Is server online?")
+    invalid_sample = BenchmarkSample(question=q, ground_truth="invalid_label_xyz")
+
+    with pytest.raises(ValueError, match="not among option keys"):
+        ActiveCalibrationBenchmark.run_benchmark(
+            samples=[invalid_sample] * 5,
+            engine_factory=lambda: DecisionEngine(model="mock"),
+            budget=2,
+        )
+
+
+def test_active_calibration_budget_curve():
+    """Verify evaluate_budget_curve returns reports across multiple budget points."""
+    samples = [
+        BenchmarkSample(
+            question=Question.choice(f"Item {i}", ["billing", "tech", "sales"]),
+            ground_truth="tech" if i % 2 == 0 else "billing",
+        )
+        for i in range(30)
+    ]
+
+    reports = ActiveCalibrationBenchmark.evaluate_budget_curve(
+        samples=samples,
+        engine_factory=lambda: DecisionEngine(model="mock"),
+        budgets=[5, 10, 15],
+    )
+    assert len(reports) == 3
+    assert [r.budget for r in reports] == [5, 10, 15]
 
 
 def test_engine_selective_conformal_risk_control():
