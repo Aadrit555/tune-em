@@ -20,6 +20,18 @@ def test_generate_permutations():
     assert perms[1] == ["optC", "optB", "optA"]
 
 
+def test_generate_permutations_large_scale():
+    # 20 items = 2.4e18 factorial space - must execute instantly in O(1) memory
+    items = [f"option_{i}" for i in range(20)]
+    perms = generate_permutations(items, max_permutations=8)
+    assert len(perms) == 8
+    assert perms[0] == items
+    for p in perms:
+        assert len(p) == 20
+        assert set(p) == set(items)
+
+
+
 def test_permutation_invariance_metrics():
     dist1 = {"a": 0.8, "b": 0.2}
     dist2 = {"a": 0.7, "b": 0.3}

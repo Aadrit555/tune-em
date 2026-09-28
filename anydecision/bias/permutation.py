@@ -40,17 +40,20 @@ def generate_permutations(
         if shifted not in permutations and len(permutations) < max_permutations:
             permutations.append(shifted)
 
-    # 3. If more needed, generate deterministic shuffles
+    # 3. If more needed, generate deterministic shuffles without materializing factorial space
     if len(permutations) < max_permutations:
         rng = random.Random(seed)
-        all_perms = list(itertools.permutations(items_list))
-        rng.shuffle(all_perms)
-        for p in all_perms:
-            p_list = list(p)
-            if p_list not in permutations:
-                permutations.append(p_list)
-            if len(permutations) >= max_permutations:
-                break
+        seen = {tuple(p) for p in permutations}
+        attempts = 0
+        max_attempts = max_permutations * 20
+        while len(permutations) < max_permutations and attempts < max_attempts:
+            attempts += 1
+            cand = items_list.copy()
+            rng.shuffle(cand)
+            cand_tuple = tuple(cand)
+            if cand_tuple not in seen:
+                seen.add(cand_tuple)
+                permutations.append(cand)
 
     return permutations[:max_permutations]
 
