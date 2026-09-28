@@ -89,6 +89,32 @@ class MockBackend(BaseBackend):
 
         return {k: float(lp) for k, lp in zip(keys, log_probs)}
 
+    def requires_sequence_scoring(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+    ) -> bool:
+        """Mock check: multi-token if contains space, symbols (+, -, #, /), or longer word."""
+        for text in candidate_strings.values():
+            clean = text.strip()
+            if " " in clean or any(c in clean for c in "+-#/._") or len(clean) > 8:
+                return True
+        return False
+
+    def next_token_logprobs_detailed(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+    ) -> Dict[str, Any]:
+        cond = self.next_token_logprobs(prompt, candidate_strings)
+        raw = {}
+        for k, v in candidate_strings.items():
+            raw[k] = float(self._hash_score(prompt, f"vocab::{k}") - 4.0)
+        return {
+            "conditional_logprobs": cond,
+            "raw_vocab_logprobs": raw,
+        }
+
     def sequence_logprobs(
         self,
         prompt: str,

@@ -62,39 +62,63 @@ class TransformersBackend(BaseBackend):
             context_window=getattr(config, "max_position_embeddings", 4096),
         )
 
+    def requires_sequence_scoring(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+    ) -> bool:
+        """Check whether any candidate encodes to more than 1 token in the context of the prompt."""
+        prompt_ids = self.tokenizer.encode(prompt, add_special_tokens=False)
+        len_prompt = len(prompt_ids)
+        for text in candidate_strings.values():
+            full_text = prompt.rstrip() + " " + text.lstrip()
+            full_ids = self.tokenizer.encode(full_text, add_special_tokens=False)
+            candidate_token_ids = full_ids[len_prompt:]
+            if len(candidate_token_ids) != 1:
+                return True
+        return False
+
+    def next_token_logprobs_detailed(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Return both raw full-vocabulary logprobs and candidate-conditional logprobs."""
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+            next_logits = outputs.logits[0, -1, :].to(torch.float32)
+
+        vocab_logprobs = torch.log_softmax(next_logits, dim=-1).cpu().numpy()
+
+        raw_vocab_lps = {}
+        for key, text in candidate_strings.items():
+            tokens_space = self.tokenizer.encode(" " + text.strip(), add_special_tokens=False)
+            tokens_raw = self.tokenizer.encode(text.strip(), add_special_tokens=False)
+            token_id = tokens_space[0] if tokens_space else (tokens_raw[0] if tokens_raw else 0)
+            raw_vocab_lps[key] = float(vocab_logprobs[token_id])
+
+        keys = list(raw_vocab_lps.keys())
+        scores = np.array([raw_vocab_lps[k] for k in keys], dtype=np.float64)
+        max_s = np.max(scores)
+        log_z = max_s + np.log(np.sum(np.exp(scores - max_s)))
+        norm_scores = scores - log_z
+
+        return {
+            "conditional_logprobs": {k: float(s) for k, s in zip(keys, norm_scores)},
+            "raw_vocab_logprobs": raw_vocab_lps,
+        }
+
     def next_token_logprobs(
         self,
         prompt: str,
         candidate_strings: Dict[str, str],
     ) -> Dict[str, float]:
-        start = time.perf_counter()
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        if self.requires_sequence_scoring(prompt, candidate_strings):
+            return self.sequence_logprobs(prompt, candidate_strings)
 
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            # Logits of last prompt token: [vocab_size]
-            next_logits = outputs.logits[0, -1, :].to(torch.float32)
-
-        # Log softmax across vocab
-        vocab_logprobs = torch.log_softmax(next_logits, dim=-1).cpu().numpy()
-
-        candidate_scores = {}
-        for key, text in candidate_strings.items():
-            # Check with and without leading space to support BPE tokenizers
-            tokens_space = self.tokenizer.encode(" " + text.strip(), add_special_tokens=False)
-            tokens_raw = self.tokenizer.encode(text.strip(), add_special_tokens=False)
-            # Choose primary single token
-            token_id = tokens_space[0] if tokens_space else (tokens_raw[0] if tokens_raw else 0)
-            candidate_scores[key] = float(vocab_logprobs[token_id])
-
-        # Normalize across candidates
-        keys = list(candidate_scores.keys())
-        scores = np.array([candidate_scores[k] for k in keys], dtype=np.float64)
-        max_s = np.max(scores)
-        log_z = max_s + np.log(np.sum(np.exp(scores - max_s)))
-        norm_scores = scores - log_z
-
-        return {k: float(s) for k, s in zip(keys, norm_scores)}
+        res = self.next_token_logprobs_detailed(prompt, candidate_strings)
+        return res["conditional_logprobs"]
 
     def sequence_logprobs(
         self,

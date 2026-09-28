@@ -229,7 +229,10 @@ class DecisionEngine:
             )
 
         candidate_strings = {opt.key: opt.label for opt in question.options}
-        is_multi_token = question.readout_strategy == ReadoutStrategy.MULTI_TOKEN_SEQUENCE
+        is_multi_token = (
+            question.readout_strategy == ReadoutStrategy.MULTI_TOKEN_SEQUENCE
+            or self.backend.requires_sequence_scoring(question.text, candidate_strings)
+        )
 
         # Check for semantic aliases
         semantic_registry = None

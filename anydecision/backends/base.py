@@ -95,6 +95,26 @@ class BaseBackend(ABC):
         """
         pass
 
+    def requires_sequence_scoring(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+    ) -> bool:
+        """Determine whether any candidate string spans multiple tokens in the context of the prompt."""
+        return False
+
+    def next_token_logprobs_detailed(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Query next-token logprobs and return both raw vocabulary logprobs and candidate-conditional logprobs."""
+        logprobs = self.next_token_logprobs(prompt, candidate_strings)
+        return {
+            "conditional_logprobs": logprobs,
+            "raw_vocab_logprobs": {k: float(v) for k, v in logprobs.items()},
+        }
+
     def batch_next_token_logprobs(
         self,
         prompts: List[str],
