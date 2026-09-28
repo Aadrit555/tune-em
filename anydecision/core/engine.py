@@ -642,9 +642,20 @@ class DecisionEngine:
             if canonical_keys is None:
                 canonical_keys = sorted(list(probs_dict.keys()))
 
+            if set(probs_dict.keys()) != set(canonical_keys):
+                raise ValueError(
+                    f"Inconsistent candidate options in calibration example: {sorted(list(probs_dict.keys()))} "
+                    f"does not match expected canonical schema {canonical_keys}"
+                )
+
             raw_probs_list.append([probs_dict.get(k, 0.0) for k in canonical_keys])
             lbl_str = str(item["label"])
-            labels_list.append(canonical_keys.index(lbl_str) if lbl_str in canonical_keys else 0)
+            if lbl_str not in canonical_keys:
+                raise ValueError(
+                    f"Calibration label {lbl_str!r} is not part of canonical schema {canonical_keys!r}. "
+                    f"Calibration requires all labels to match defined candidate options."
+                )
+            labels_list.append(canonical_keys.index(lbl_str))
 
         prob_arr = np.array(raw_probs_list, dtype=np.float64)
         lbl_arr = np.array(labels_list, dtype=np.int64)

@@ -126,3 +126,25 @@ def test_calibration_metrics_and_report():
     assert report.accuracy == 1.0
     assert "STATISTICAL CALIBRATION REPORT" in report.summary()
 
+
+def test_calibrate_rejects_unknown_label_and_schema():
+    from anydecision.core.engine import DecisionEngine
+    engine = DecisionEngine(model="mock")
+
+    # 1. Unknown label not in candidate options
+    invalid_dataset = [
+        {"probabilities": {"yes": 0.8, "no": 0.2}, "label": "yes"},
+        {"probabilities": {"yes": 0.3, "no": 0.7}, "label": "unrelated_class"},
+    ]
+    with pytest.raises(ValueError, match="is not part of canonical schema"):
+        engine.calibrate(invalid_dataset, method="temperature")
+
+    # 2. Inconsistent candidate option schema
+    inconsistent_dataset = [
+        {"probabilities": {"yes": 0.8, "no": 0.2}, "label": "yes"},
+        {"probabilities": {"cat": 0.5, "dog": 0.5}, "label": "dog"},
+    ]
+    with pytest.raises(ValueError, match="Inconsistent candidate options"):
+        engine.calibrate(inconsistent_dataset, method="temperature")
+
+
