@@ -42,8 +42,11 @@ When developers ask an LLM to make a decision (e.g. *"Is this transaction fraudu
 Text generation introduces autoregressive decode latency, grammar hallucinatory drift, and sampling randomness. More importantly, **generation obscures uncertainty**: a model forced to output a token cannot reliably signal when it is 51% vs 99% confident. `anydecision` bypasses generation entirely, evaluating candidates in a single forward pass.
 
 ### 3. How are probabilities extracted?
-For single tokens, the model computes vocabulary logits $z_k$ at the prompt's termination. Log-softmax over candidate options yields normalized probabilities:
-$$\log P(y_k \mid x) = z_k - \log \sum_{j} \exp(z_j)$$
+For single tokens, the model computes vocabulary logits $z_k$ at the prompt's termination. Log-softmax over the candidate set $\mathcal{C}$ yields candidate-conditional probabilities:
+$$\log P(y_k \mid x, \mathcal{C}) = z_k - \log \sum_{j \in \mathcal{C}} \exp(z_j)$$
+`anydecision` explicitly exposes both quantities on every decision:
+- `choice_probability`: Candidate-conditional probability $P(y_k \mid x, \mathcal{C})$ normalized over the candidate set.
+- `raw_vocab_logprob` / `model_token_probability`: Unconstrained vocabulary log-probability and likelihood $\exp(z_k - \log \sum_{v \in \mathcal{V}} \exp(z_v))$.
 For multi-token options (*"urgent technical support"*), `anydecision` computes teacher-forced joint sequence probabilities normalized with length penalties to eliminate length bias.
 
 ### 4. What is Level L0?
@@ -59,7 +62,7 @@ For multi-token options (*"urgent technical support"*), `anydecision` computes t
 Calibration mathematically maps predicted probabilities to empirical correctness: when a calibrated model predicts 80% confidence across 100 queries, exactly 80 should be correct. We evaluate calibration using Expected Calibration Error (ECE), Adaptive ECE, Brier score, and Negative Log-Likelihood.
 
 ### 8. When does the system abstain?
-Via selective prediction policies (`min_confidence=0.85` or `target_error=0.05`), the engine returns `Decision(abstained=True, reason="risk_exceeds_target_error")` whenever posterior risk violates permissible error tolerance. It also supports **conformal prediction sets** guaranteed to cover the ground truth with $(1-\alpha)$ probability.
+Via selective prediction policies (`min_confidence=0.85` or `target_error=0.05`), the engine returns `Decision(abstained=True, reason="risk_exceeds_target_error")` whenever posterior risk violates permissible error tolerance. It also supports **conformal prediction sets** with mathematically rigorous guarantee tiers (`formal_conformal`, `high_confidence_empirical`, `heuristic`, or `unavailable`).
 
 ### 9. What models and backends are supported?
 - **Local Hugging Face Transformers**: Causal LMs (`Qwen`, `Llama`, `Mistral`, `Gemma`, `Phi`).
@@ -98,11 +101,12 @@ decision = anydecision.choose(
     ["SQL Injection", "Server-Side Request Forgery", "Cross-Site Scripting", "Buffer Overflow"]
 )
 
-print(decision.answer)         # "SQL Injection"
-print(decision.confidence)     # 0.9412
-print(decision.probabilities)  # {'SQL Injection': 0.9412, ...}
-print(decision.uncertainty)   # 0.0588
-print(decision.abstained)      # False
+print(decision.answer)                    # "SQL Injection"
+print(decision.choice_probability)        # 0.9412 (conditional on candidate set)
+print(decision.model_token_probability)   # 0.0381 (unconstrained vocabulary likelihood)
+print(decision.choice_margin)             # 0.8824 (margin over second-best choice)
+print(decision.predictive_entropy)        # 0.2811 nats
+print(decision.abstained)                 # False
 
 # 2. Decision Engine with Expected Utility & Action Policies:
 from anydecision import DecisionEngine, Question
@@ -303,7 +307,7 @@ The following matrix contrasts `anydecision` against `wfzyx/von` (a non-autoregr
 | **Internal Representation** | Monolithic option-marker cross-attention | Single-layer hidden state | **Layer-Trajectory Tracking & Multi-Layer Fusion**: Traces confidence emergence across all transformer layers; computes decision emergence layer ($L_{emergence}$); compares concatenation/attention/gating heads |
 | **Risk Guarantees** | None (no abstention) | Heuristic score threshold | **Selective Conformal Prediction**: Finite-sample statistical risk guarantee ($E[\text{loss} \mid \text{selected}] \le \alpha$) + Hierarchical Bayesian Shrinkage |
 | **Active Learning & Drift** | None | Static offline calibration | **Active Calibration & Sequential Drift**: Information-theoretic candidate selection (reduces annotation cost by 75%) + CUSUM drift detection |
-| **Prompt Injection Defense** | Vulnerable to context corruption | Vulnerable to prompt injection | **Cryptographic-Style Isolation**: Structured `DecisionContext` with strict XML quarantine delimiters and non-executable data blocks |
+| **Prompt Injection Defense** | Vulnerable to context corruption | Vulnerable to prompt injection | **Structured Context Isolation**: Structured `DecisionContext` with strict XML quarantine delimiters and non-executable data blocks |
 | **Real-Time Gaming Benchmark**| None | None | **Classic DOOM Tactical AI**: Evaluates real-time combat survival, weapon selection, and dodging under extreme volatility (>130 decisions/sec) |
 
 ---
@@ -466,9 +470,10 @@ Metrics are exposed at `GET /metrics` and Prometheus exposition at `GET /metrics
 
 ## Research Transparency & Limitations
 
-1. **Probabilities Are Not Inherent Ground Truth**: LLM logits reflect the model's training distribution and alignment tokens, not metaphysical truth.
-2. **Calibration Does Not Guarantee Correctness**: Calibration guarantees empirical frequency over exchangeable validation distributions. It does not prevent errors on out-of-distribution instances.
-3. **OOD Diagnostics Are Heuristics**: Our entropy, collapse, and sensitivity metrics serve as observable alerts, not formal proofs of distribution shift.
+1. **Candidate-Conditional Probabilities vs Global Likelihood**: Log-softmax normalization across a candidate set $\mathcal{C}$ measures relative preference $P(y \mid x, \mathcal{C})$. It sums to 1.0 across the candidate set, regardless of how improbable the choices are in the unconstrained language model space. `anydecision` provides `model_token_probability` ($\exp(z - \log \sum_{v \in \mathcal{V}} \exp(z_v))$) and `predictive_entropy` alongside `choice_probability` so callers never mistake relative ranking for universal confidence.
+2. **Statistical Conformal Bounds**: Conformal prediction set coverage and Selective Conformal Risk Control bounds hold under exchangeability between calibration and test data, with calibration sample size $n \ge 20$. When sample sizes are small ($n < 20$) or when empirical risk fallbacks are utilized, `anydecision` reports `guarantee_type="heuristic"` or `"high_confidence_empirical"`, explicitly withholding `formal_conformal`.
+3. **Calibration Does Not Guarantee Correctness**: Calibration guarantees empirical frequency over exchangeable validation distributions. It does not prevent errors on out-of-distribution instances.
+4. **OOD Diagnostics Are Heuristics**: Our entropy, collapse, and sensitivity metrics serve as observable operational alerts, not formal statistical proofs of distribution shift.
 
 ---
 
