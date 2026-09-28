@@ -229,7 +229,7 @@ def real_doom(
 
 @app.command("vizdoom")
 def vizdoom_cmd(
-    scenario: str = typer.Option("basic", "--scenario", "-s", help="ViZDoom scenario: basic, defend_the_center, deadly_corridor, etc."),
+    scenario: str = typer.Option("defend_the_center", "--scenario", "-s", help="ViZDoom scenario: defend_the_center, defend_the_line, deadly_corridor, basic, etc."),
     episodes: int = typer.Option(3, "--episodes", "-e", help="Number of benchmark episodes"),
     wad: Optional[str] = typer.Option(None, "--wad", "-w", help="Optional path to custom DOOM.WAD binary"),
     model: str = typer.Option("mock", "--model", help="Decision model backend"),

@@ -143,8 +143,13 @@ class ViZDoomDecisionRunner:
             scenario = "basic"
 
         if window_visible:
-            game.set_screen_resolution(vzd.ScreenResolution.RES_640X480)
+            game.set_screen_resolution(vzd.ScreenResolution.RES_800X600)
             game.set_sound_enabled(True)
+            game.set_render_hud(True)
+            game.set_render_crosshair(True)
+            game.set_render_weapon(True)
+            game.set_render_decals(True)
+            game.set_render_particles(True)
             game.set_window_visible(True)
         else:
             game.set_window_visible(False)
@@ -171,10 +176,7 @@ class ViZDoomDecisionRunner:
         telemetry_logs = []
         total_decisions = 0
 
-        # Construct discrete action vectors for available buttons
-        # 1. Neutral (no action)
-        # 2. Individual buttons
-        # 3. Combo actions (e.g. Strafe + Fire)
+        # Construct discrete action vectors for available buttons and combos
         action_map: Dict[str, List[int]] = {}
         action_descriptions: List[str] = []
 
@@ -184,20 +186,46 @@ class ViZDoomDecisionRunner:
             action_map[bname] = vec
             action_descriptions.append(bname)
 
-        # Add fire combo if both ATTACK and movement exist
+        # Add combat fire combos for turning and strafing
         if "ATTACK" in button_names:
+            att_idx = button_names.index("ATTACK")
+            if "TURN_LEFT" in button_names:
+                vec = [0] * len(buttons)
+                vec[button_names.index("TURN_LEFT")] = 1
+                vec[att_idx] = 1
+                action_map["TURN_LEFT_AND_FIRE"] = vec
+                action_descriptions.append("TURN_LEFT_AND_FIRE")
+            if "TURN_RIGHT" in button_names:
+                vec = [0] * len(buttons)
+                vec[button_names.index("TURN_RIGHT")] = 1
+                vec[att_idx] = 1
+                action_map["TURN_RIGHT_AND_FIRE"] = vec
+                action_descriptions.append("TURN_RIGHT_AND_FIRE")
             if "MOVE_LEFT" in button_names:
                 vec = [0] * len(buttons)
                 vec[button_names.index("MOVE_LEFT")] = 1
-                vec[button_names.index("ATTACK")] = 1
+                vec[att_idx] = 1
                 action_map["STRAFE_LEFT_AND_FIRE"] = vec
                 action_descriptions.append("STRAFE_LEFT_AND_FIRE")
             if "MOVE_RIGHT" in button_names:
                 vec = [0] * len(buttons)
                 vec[button_names.index("MOVE_RIGHT")] = 1
-                vec[button_names.index("ATTACK")] = 1
+                vec[att_idx] = 1
                 action_map["STRAFE_RIGHT_AND_FIRE"] = vec
                 action_descriptions.append("STRAFE_RIGHT_AND_FIRE")
+            if "MOVE_FORWARD" in button_names:
+                vec = [0] * len(buttons)
+                vec[button_names.index("MOVE_FORWARD")] = 1
+                vec[att_idx] = 1
+                action_map["ADVANCE_AND_FIRE"] = vec
+                action_descriptions.append("ADVANCE_AND_FIRE")
+
+        ignored_labels = {
+            "DoomPlayer", "BulletPuff", "Blood", "TeleportFog", "GreenArmor", "BlueArmor",
+            "Medikit", "Stimpack", "HealthBonus", "ArmorBonus", "Clip", "ShellBox", "RocketBox"
+        }
+
+        max_steps_per_ep = 250 if window_visible else 80
 
         for ep in range(1, num_episodes + 1):
             game.new_episode()
@@ -208,7 +236,7 @@ class ViZDoomDecisionRunner:
             if console:
                 console.print(f"[bold cyan]>>> Starting ViZDoom Episode {ep}/{num_episodes}...[/bold cyan]")
 
-            while not game.is_episode_finished() and ep_step < 50:
+            while not game.is_episode_finished() and ep_step < max_steps_per_ep:
                 ep_step += 1
                 total_decisions += 1
                 state = game.get_state()
@@ -222,9 +250,9 @@ class ViZDoomDecisionRunner:
                 # Analyze visual labels from the frame buffer
                 screen_width = game.get_screen_width() or 320
                 screen_center = screen_width / 2.0
-                monsters = [lbl for lbl in (state.labels or []) if lbl.object_name != "DoomPlayer"]
+                monsters = [lbl for lbl in (state.labels or []) if lbl.object_name not in ignored_labels]
 
-                target_name = "Hostile Demon"
+                target_name = "Searching Arena..."
                 target_offset_x = 0.0
                 target_in_crosshair = False
                 target_left = False
@@ -236,14 +264,14 @@ class ViZDoomDecisionRunner:
                     m_center_x = primary_m.x + (primary_m.width / 2.0)
                     target_offset_x = m_center_x - screen_center
 
-                    if abs(target_offset_x) <= 22.0:
+                    if abs(target_offset_x) <= 30.0:
                         target_in_crosshair = True
-                    elif target_offset_x < -22.0:
+                    elif target_offset_x < -30.0:
                         target_left = True
                     else:
                         target_right = True
                 else:
-                    # No target in sight; search
+                    # No target in sight; active 360-degree radar scan
                     target_right = True
 
                 # Formulate situational hypotheses
@@ -254,20 +282,22 @@ class ViZDoomDecisionRunner:
                     utility_grid[act] = {}
                     act_u = act.upper()
                     for sc in scenarios:
-                        if "ATTACK" in act_u and ("STRAFE" not in act_u):
-                            val = 80.0 if sc == "target_aligned" else -25.0
-                        elif "STRAFE_LEFT_AND_FIRE" in act_u:
-                            val = 60.0 if sc in ("target_aligned", "target_to_left") else -10.0
-                        elif "STRAFE_RIGHT_AND_FIRE" in act_u:
-                            val = 60.0 if sc in ("target_aligned", "target_to_right") else -10.0
+                        if act_u == "ATTACK":
+                            val = 85.0 if sc == "target_aligned" else -25.0
+                        elif "TURN_LEFT_AND_FIRE" in act_u or "STRAFE_LEFT_AND_FIRE" in act_u:
+                            val = 70.0 if sc in ("target_aligned", "target_to_left") else -15.0
+                        elif "TURN_RIGHT_AND_FIRE" in act_u or "STRAFE_RIGHT_AND_FIRE" in act_u:
+                            val = 70.0 if sc in ("target_aligned", "target_to_right") else -15.0
+                        elif "ADVANCE_AND_FIRE" in act_u:
+                            val = 75.0 if sc == "target_aligned" else (30.0 if sc == "tactical_reposition" else 0.0)
                         elif "LEFT" in act_u:
-                            val = 55.0 if sc == "target_to_left" else (-15.0 if sc == "target_to_right" else 10.0)
+                            val = 60.0 if sc == "target_to_left" else (-20.0 if sc == "target_to_right" else 10.0)
                         elif "RIGHT" in act_u:
-                            val = 55.0 if sc == "target_to_right" else (-15.0 if sc == "target_to_left" else 10.0)
+                            val = 60.0 if sc == "target_to_right" else (-20.0 if sc == "target_to_left" else 10.0)
                         elif "FORWARD" in act_u:
-                            val = 30.0 if sc == "tactical_reposition" else 15.0
+                            val = 40.0 if sc == "tactical_reposition" else 15.0
                         elif "BACKWARD" in act_u:
-                            val = 40.0 if health < 40 else 5.0
+                            val = 45.0 if health < 40 else 5.0
                         else:
                             val = 10.0
                         utility_grid[act][sc] = val

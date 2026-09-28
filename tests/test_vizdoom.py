@@ -45,3 +45,4 @@ def test_vizdoom_cli_command(check_vizdoom):
     assert result.exit_code == 0
     assert "VIZDOOM" in result.output
     assert "SCORECARD" in result.output
+
