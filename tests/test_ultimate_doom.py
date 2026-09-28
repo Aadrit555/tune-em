@@ -85,8 +85,20 @@ def test_real_doom_evaluator(wad_path):
     assert report.demons_slain >= 0
     assert report.total_decisions > 0
     assert report.mean_decision_latency_ms >= 0
-    assert report.status in ("LEVEL CLEARED", "SLAIN IN COMBAT")
+    assert report.status in ("OBJECTIVE MET", "EPISODE END")
     assert len(report.telemetry_log) > 0
+
+
+def test_real_doom_missing_wad_fails_loudly():
+    engine = DecisionEngine(model="mock")
+    with pytest.raises(FileNotFoundError):
+        RealDoomEvaluator.run_map_evaluation(
+            engine=engine,
+            map_code="E1M1",
+            skill_level=3,
+            wad_path=r"C:\NonExistent\Fake\DOOM.WAD",
+            render_console=False,
+        )
 
 
 def test_real_doom_cli_command(wad_path):

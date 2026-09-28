@@ -182,7 +182,7 @@ def doom(
     difficulty: str = typer.Option("medium", "--difficulty", "-d", help="Difficulty: medium, hard, or boss"),
     model: str = typer.Option("mock", "--model", "-m", help="Decision model backend"),
 ) -> None:
-    """Run real-time DOOM combat tactical decision benchmark."""
+    """Run the SYNTHETIC toy-combat simulator (deterministic unit-test env, not real DOOM)."""
     from anydecision.games.doom import DoomCombatBenchmarkRunner
     engine = DecisionEngine(model=model)
     console.print(f"[bold red]Initializing DOOM Tactical AI Combat Benchmark ({difficulty.upper()} difficulty)...[/bold red]")
@@ -212,10 +212,19 @@ def compare_von(
 def real_doom(
     map_code: str = typer.Option("E1M1", "--map", "-m", help="Map to evaluate (e.g. E1M1, E1M8, E2M8)"),
     skill: int = typer.Option(3, "--skill", "-s", help="Skill level: 1 (Easy) to 5 (Nightmare)"),
-    wad_path: Optional[str] = typer.Option(None, "--wad", "-w", help="Optional path to DOOM.WAD binary"),
+    wad_path: Optional[str] = typer.Option(None, "--wad", "-w", help="Path to genuine DOOM.WAD (required)"),
     model: str = typer.Option("mock", "--model", help="Decision model backend"),
+    episodes: int = typer.Option(1, "--episodes", "-e", help="Number of live engine episodes"),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Deterministic seed (recorded in artifact)"),
+    policy: str = typer.Option("anydecision", "--policy", help="Policy: anydecision, random, scripted"),
+    observation_mode: str = typer.Option("HYBRID", "--observation-mode", help="Observation mode: STATE, VISION, HYBRID"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Machine-readable JSON artifact path"),
 ) -> None:
-    """Execute tactical decision AI against real Ultimate DOOM IWAD binary level entities."""
+    """Evaluate a decision policy on a genuine WAD map inside the live ViZDoom engine.
+
+    Requires a real DOOM.WAD (--wad) and the vizdoom package. Fails loudly
+    when either is missing; never substitutes a synthetic simulator.
+    """
     from anydecision.games.ultimate_doom import RealDoomEvaluator
     engine = DecisionEngine(model=model)
     RealDoomEvaluator.run_map_evaluation(
@@ -224,6 +233,11 @@ def real_doom(
         skill_level=skill,
         wad_path=wad_path,
         render_console=True,
+        num_episodes=episodes,
+        seed=seed,
+        policy=policy,
+        observation_mode=observation_mode,
+        output_path=output,
     )
 
 
@@ -236,8 +250,12 @@ def vizdoom_cmd(
     wad: Optional[str] = typer.Option(None, "--wad", "-w", help="Optional path to custom DOOM.WAD binary"),
     model: str = typer.Option("mock", "--model", help="Decision model backend"),
     render: bool = typer.Option(False, "--render", help="Render graphical game window"),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Deterministic seed (recorded in artifact)"),
+    policy: str = typer.Option("anydecision", "--policy", help="Policy: anydecision, random, scripted"),
+    observation_mode: str = typer.Option("HYBRID", "--observation-mode", help="Observation mode: STATE, VISION, HYBRID"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Machine-readable JSON artifact path"),
 ) -> None:
-    """Run live reinforcement learning benchmark using ViZDoom (Farama Foundation)."""
+    """Run a typed decision policy inside the live ViZDoom engine (ViZDoom integration)."""
     from anydecision.games.vizdoom_env import ViZDoomDecisionRunner
     engine = DecisionEngine(model=model)
     ViZDoomDecisionRunner.run_simulation(
@@ -249,6 +267,10 @@ def vizdoom_cmd(
         wad_path=wad,
         window_visible=render,
         render_console=True,
+        seed=seed,
+        policy=policy,
+        observation_mode=observation_mode,
+        output_path=output,
     )
 
 

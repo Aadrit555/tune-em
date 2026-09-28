@@ -137,9 +137,13 @@ class ViZDoomScoreReport(BaseModel):
     completion_rate: float = 0.0
     total_kills: int = 0
     total_deaths: int = 0
+    total_items: int = 0
     total_damage_taken: float = 0.0
     total_reward: float = 0.0
     mean_reward: float = 0.0
+    mean_final_health: float = 0.0
+    mean_final_armor: float = 0.0
+    total_expected_utility: float = 0.0
     total_decisions: int = 0
     total_abstentions: int = 0
     total_backend_calls: int = 0
@@ -484,6 +488,7 @@ class ViZDoomDecisionRunner:
             vzd.GameVariable.KILLCOUNT, vzd.GameVariable.HEALTH,
             vzd.GameVariable.ARMOR, vzd.GameVariable.SELECTED_WEAPON_AMMO,
             vzd.GameVariable.DEATHCOUNT, vzd.GameVariable.DAMAGE_TAKEN,
+            vzd.GameVariable.ITEMCOUNT,
         ]:
             try:
                 if var not in game.get_available_game_variables():
@@ -537,6 +542,7 @@ class ViZDoomDecisionRunner:
         episodes_completed = 0
         total_kills = 0
         total_deaths = 0
+        total_items = 0
         total_damage_taken = 0.0
         total_rewards: List[float] = []
         all_latencies: List[float] = []
@@ -546,7 +552,10 @@ class ViZDoomDecisionRunner:
         total_abstentions = 0
         total_backend_calls = 0
         total_tokens = 0
+        total_expected_utility = 0.0
         tokens_estimated_any = False
+        final_healths: List[float] = []
+        final_armors: List[float] = []
         telemetry_logs: List[str] = []
         max_steps_per_ep = max_steps_per_episode if max_steps_per_episode is not None else (1200 if window_visible else 100)
 
@@ -559,9 +568,12 @@ class ViZDoomDecisionRunner:
             game.new_episode()
             ep_reward = 0.0
             ep_step = 0
+            ep_end_health = 100.0
+            ep_end_armor = 0.0
             ep_kills_start = int(_safe_game_var(game, vzd.GameVariable.KILLCOUNT, 0.0))
             ep_deaths_start = int(_safe_game_var(game, vzd.GameVariable.DEATHCOUNT, 0.0))
             ep_damage_start = _safe_game_var(game, vzd.GameVariable.DAMAGE_TAKEN, 0.0)
+            ep_items_start = int(_safe_game_var(game, vzd.GameVariable.ITEMCOUNT, 0.0))
 
             if console:
                 console.print(f"[bold cyan]>>> Starting ViZDoom Episode {ep}/{num_episodes}...[/bold cyan]")
@@ -574,6 +586,8 @@ class ViZDoomDecisionRunner:
                     break
 
                 prompt, detail = extract_observation(game, state, mode, ep, ep_step)
+                ep_end_health = float(detail.get("health", 0.0))
+                ep_end_armor = float(detail.get("armor", 0.0))
 
                 t0 = time.perf_counter()
                 if policy_kind == PolicyKind.RANDOM:
@@ -615,6 +629,8 @@ class ViZDoomDecisionRunner:
                     )
                     backend_calls = decision.backend_calls
                     total_backend_calls += backend_calls
+                    if decision.optimal_action_utility is not None:
+                        total_expected_utility += float(decision.optimal_action_utility)
                     total_tokens += decision.tokens_processed
                     tokens_estimated_any = tokens_estimated_any or bool(decision.tokens_estimated)
                     compute_path_counts["+".join(decision.compute_path)] += 1
@@ -644,12 +660,16 @@ class ViZDoomDecisionRunner:
             ep_kills = max(0, int(_safe_game_var(game, vzd.GameVariable.KILLCOUNT, 0.0)) - ep_kills_start)
             ep_deaths = max(0, int(_safe_game_var(game, vzd.GameVariable.DEATHCOUNT, 0.0)) - ep_deaths_start)
             ep_damage = max(0.0, _safe_game_var(game, vzd.GameVariable.DAMAGE_TAKEN, 0.0) - ep_damage_start)
+            ep_items = max(0, int(_safe_game_var(game, vzd.GameVariable.ITEMCOUNT, 0.0)) - ep_items_start)
+            total_items += ep_items
             if ep_step >= max_steps_per_ep or game.is_episode_finished():
                 episodes_completed += 1
             total_kills += ep_kills
             total_deaths += ep_deaths
             total_damage_taken += ep_damage
             total_rewards.append(ep_reward)
+            final_healths.append(ep_end_health)
+            final_armors.append(ep_end_armor)
             died = ep_deaths > 0
             won = is_victory(scenario, ep_kills, died)
             if won:
@@ -690,6 +710,10 @@ class ViZDoomDecisionRunner:
             completion_rate=completion_rate,
             total_kills=total_kills,
             total_deaths=total_deaths,
+            total_items=total_items,
+            mean_final_health=float(np.mean(final_healths)) if final_healths else 0.0,
+            mean_final_armor=float(np.mean(final_armors)) if final_armors else 0.0,
+            total_expected_utility=float(total_expected_utility),
             total_damage_taken=float(total_damage_taken),
             total_reward=float(sum(total_rewards)),
             mean_reward=mean_rew,
@@ -732,6 +756,7 @@ class ViZDoomDecisionRunner:
             table.add_row("COMPLETION RATE", f"{completion_rate:.1f}%")
             table.add_row("KILLS (KILLCOUNT)", str(total_kills))
             table.add_row("DEATHS (DEATHCOUNT)", str(total_deaths))
+            table.add_row("ITEMS (ITEMCOUNT)", str(total_items))
             table.add_row("DAMAGE TAKEN", f"{total_damage_taken:.1f}")
             table.add_row("MEAN REWARD", f"{mean_rew:+.2f}")
             table.add_row("MEAN LATENCY", f"{mean_lat:.2f} ms")

@@ -8,23 +8,19 @@ to score real combat decisions.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 from pathlib import Path
-import random
 import struct
-import time
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from pydantic import BaseModel, Field
-from rich.box import DOUBLE, HEAVY, ROUNDED
+from rich.box import DOUBLE
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 
 from anydecision.core.engine import DecisionEngine
-from anydecision.core.question import Question
-from anydecision.theory.utility import UtilityMatrix
 
 # Authentic Doom entity type mappings (id Software Doom Bible / engine source)
 DOOM_ENTITY_DEFS = {
@@ -270,7 +266,13 @@ class UltimateDoomWadParser:
 
 
 class RealDoomScoreReport(BaseModel):
-    """Official id Software-style end-level statistical report."""
+    """Factual end-of-level report: WAD spawn census vs live-engine counters.
+
+    demons_slain / pickups_collected are authoritative ViZDoom KILLCOUNT /
+    ITEMCOUNT deltas. status is the scenario victory proxy ("OBJECTIVE MET"
+    when the engine run met its victory criterion, else "EPISODE END") —
+    NOT a claim of full level clearance (exit-switch state is not tracked).
+    """
     map_code: str
     map_title: str
     skill_level: str
@@ -300,9 +302,23 @@ class RealDoomEvaluator:
         skill_level: int = 3,
         wad_path: Optional[str] = None,
         render_console: bool = True,
+        num_episodes: int = 1,
+        max_steps_per_episode: int = 400,
+        seed: Optional[int] = None,
+        observation_mode: str = "HYBRID",
+        policy: str = "anydecision",
+        output_path: Optional[str] = None,
     ) -> RealDoomScoreReport:
         console = Console() if render_console else None
-        parser = UltimateDoomWadParser(wad_path)
+        try:
+            parser = UltimateDoomWadParser(wad_path)
+        except FileNotFoundError as e:
+            searched = ", ".join(DEFAULT_WAD_SEARCH_PATHS)
+            raise FileNotFoundError(
+                f"{e} Searched paths: {searched}. Provide a genuine WAD via "
+                "--wad /path/to/DOOM.WAD. Evaluation aborted: no synthetic "
+                "substitute is used for real-doom."
+            ) from e
         doom_map = parser.parse_map(map_code=map_code, skill_level=skill_level)
 
         skill_names = {
@@ -322,167 +338,56 @@ class RealDoomEvaluator:
             console.print(f"[bold white]   Hostiles: {len(doom_map.monsters)} | Pickups: {len(doom_map.pickups)} | Barrels: {len(doom_map.hazards)}[/bold white]")
             console.print("[bold red]========================================================================[/bold red]\n")
 
-        # Player starting status
-        health = 100
-        armor = 25
-        active_weapon = "Shotgun" if "E1M" in map_code else "Super Shotgun"
-        if map_code in ("E2M8", "E3M8"):
-            active_weapon = "Plasma Rifle"
+        # REAL evaluation: the WAD census above is the genuine initial state.
+        # All combat dynamics from here on come from the live ViZDoom engine
+        # (real physics, real damage, authoritative KILLCOUNT/DEATHCOUNT/
+        # ITEMCOUNT). No damage, kills, or pickups are simulated or fabricated.
+        from anydecision.games.vizdoom_env import ViZDoomDecisionRunner, is_vizdoom_available
 
-        active_monsters = [m.model_copy() for m in doom_map.monsters]
-        active_pickups = [p.model_copy() for p in doom_map.pickups]
-        active_hazards = [h.model_copy() for h in doom_map.hazards]
-
-        demons_slain = 0
-        pickups_collected = 0
-        accumulated_eu = 0.0
-        latencies = []
-        telemetry_logs = []
-
-        # Simulate tactical engagements across encounters in the level
-        turn = 0
-        max_turns = min(25, max(8, len(active_monsters) + 4))
-
-        while turn < max_turns and health > 0 and active_monsters:
-            turn += 1
-            primary_target = active_monsters[0]
-            nearest_pickup = active_pickups[0] if active_pickups else None
-            nearest_barrel = active_hazards[0] if active_hazards else None
-
-            # Formulate situational choices dynamically
-            choices = [
-                f"fire {active_weapon} at {primary_target.name} ({primary_target.distance_to_player:.1f}m)",
-                f"tactical retreat behind steel linedef bulkhead to break line of sight",
-                f"sidestep projectile corridor into cover",
-            ]
-
-            if nearest_pickup and nearest_pickup.distance_to_player < 15.0:
-                choices.append(f"sprint to secure {nearest_pickup.name} ({nearest_pickup.distance_to_player:.1f}m away)")
-
-            if nearest_barrel and nearest_barrel.distance_to_player < 12.0:
-                choices.append(f"ignite explosive barrel adjacent to {primary_target.name} for splash devastation")
-
-            if primary_target.distance_to_player < 4.0:
-                choices.append(f"chainsaw point-blank stun lock on {primary_target.name}")
-
-            # Define situational scenarios for expected utility
-            scenarios = ["vulnerable_monster_flank", "hostile_incoming_fireball", "critical_health_exposure"]
-            utility_grid: Dict[str, Dict[str, float]] = {}
-
-            for act in choices:
-                utility_grid[act] = {}
-                for scen in scenarios:
-                    act_l = act.lower()
-                    if "fire" in act_l:
-                        u = 45.0 if scen == "vulnerable_monster_flank" else (20.0 if health > 40 else -5.0)
-                    elif "barrel" in act_l:
-                        u = 55.0 if scen == "vulnerable_monster_flank" else 15.0  # Massive AoE reward!
-                    elif "chainsaw" in act_l:
-                        u = 50.0 if scen == "vulnerable_monster_flank" and primary_target.name != "Cyberdemon" else -20.0
-                    elif "sprint" in act_l:
-                        u = 60.0 if (health < 40 or scen == "critical_health_exposure") else 15.0
-                    elif "retreat" in act_l or "sidestep" in act_l:
-                        u = 40.0 if scen == "hostile_incoming_fireball" else 10.0
-                    else:
-                        u = 10.0
-                    utility_grid[act][scen] = u
-
-            q_text = (
-                f"ULTIMATE DOOM TACTICAL HUD [{doom_map.map_code} | Turn {turn:02d}]\n"
-                f"Vitality: {health}% HP | Armor: {armor}%\n"
-                f"Engaged Weapon: {active_weapon}\n"
-                f"Nearest Hostile: {primary_target.name} ({primary_target.threat} threat at {primary_target.distance_to_player:.1f}m, HP: {primary_target.hp})\n"
-                f"Nearby Features: Barrel: {nearest_barrel.name if nearest_barrel else 'None'} | Item: {nearest_pickup.name if nearest_pickup else 'None'}\n"
-                f"Decision Question: Select the highest-utility tactical action for maximum survival and clearance."
+        if not is_vizdoom_available():
+            raise ImportError(
+                "real-doom requires the 'vizdoom' package for genuine engine execution. "
+                "Install it via 'pip install vizdoom'. Aborting rather than "
+                "substituting a synthetic simulator."
             )
 
-            q = Question.choice(q_text, choices=scenarios)
-            matrix = UtilityMatrix(actions=choices, states=scenarios, matrix=utility_grid)
+        viz_report = ViZDoomDecisionRunner.run_simulation(
+            engine=engine,
+            scenario=doom_map.map_code,
+            num_episodes=num_episodes,
+            wad_path=parser.wad_path,
+            skill=skill_level,
+            max_steps_per_episode=max_steps_per_episode,
+            frame_skip=4,
+            window_visible=False,
+            render_console=False,
+            observation_mode=observation_mode,
+            policy=policy,
+            seed=seed,
+        )
 
-            t0 = time.perf_counter()
-            decision = engine.decide_adaptive(q, utility_matrix=matrix, track_layer_trajectory=True)
-            lat_ms = (time.perf_counter() - t0) * 1000.0
-            latencies.append(lat_ms)
+        demons_slain = viz_report.total_kills
+        pickups_collected = viz_report.total_items
+        health = int(round(viz_report.mean_final_health))
+        armor = int(round(viz_report.mean_final_armor))
+        accumulated_eu = viz_report.total_expected_utility
+        latencies = [viz_report.mean_latency_ms] if viz_report.mean_latency_ms else []
+        telemetry_logs = list(viz_report.telemetry_log)
+        turn = viz_report.total_decisions
 
-            chosen_action = decision.selected_action or choices[0]
-            accumulated_eu += decision.optimal_action_utility or 0.0
-
-            # Execute action resolution in the real level
-            act_l = chosen_action.lower()
-            damage_dealt = 0
-            damage_taken = 0
-            summary_msg = ""
-
-            if "barrel" in act_l and nearest_barrel:
-                # Barrel explosion deals massive 160-250 AoE damage
-                damage_dealt = random.randint(160, 240)
-                primary_target.hp -= damage_dealt
-                active_hazards.pop(0)
-                summary_msg = f"BARREL EXPLOSION: Detonated toxic barrel! {damage_dealt} AoE blast damage!"
-                if primary_target.hp <= 0:
-                    demons_slain += 1
-                    active_monsters.pop(0)
-                    summary_msg += f" {primary_target.name} blown into bloody pieces!"
-
-            elif "fire" in act_l or "chainsaw" in act_l:
-                base_dmg = 85 if "shotgun" in active_weapon.lower() else (350 if "bfg" in active_weapon.lower() else 115)
-                damage_dealt = int(base_dmg * random.uniform(0.85, 1.35))
-                primary_target.hp -= damage_dealt
-                if primary_target.hp <= 0:
-                    demons_slain += 1
-                    active_monsters.pop(0)
-                    summary_msg = f"DIRECT HIT: {damage_dealt} DMG! {primary_target.name} obliterated into bloody gibs!"
-                else:
-                    summary_msg = f"HIT: Dealt {damage_dealt} DMG to {primary_target.name} ({primary_target.hp} HP remaining)."
-
-                # Enemy counter-attack if alive
-                if active_monsters and random.random() > 0.40:
-                    damage_taken = int(primary_target.base_dmg * random.uniform(0.6, 0.95))
-
-            elif "sprint" in act_l and nearest_pickup:
-                heal = DOOM_ENTITY_DEFS.get(nearest_pickup.type_id, {}).get("heal", 20)
-                health = min(200 if "Soul" in nearest_pickup.name else 100, health + heal)
-                pickups_collected += 1
-                active_pickups.pop(0)
-                summary_msg = f"ITEM SECURED: Collected {nearest_pickup.name}! Vitality restored to {health}% HP."
-                damage_taken = random.randint(0, 5)
-
-            else:
-                summary_msg = "EVASIVE STRAFE: Broke line of sight behind concrete linedef; enemy attack missed."
-                damage_taken = 0
-
-            # Armor absorption
-            if damage_taken > 0:
-                if armor > 0:
-                    absorbed = min(armor, damage_taken // 2)
-                    armor -= absorbed
-                    damage_taken -= absorbed
-                health = max(0, health - damage_taken)
-
-            # Doomguy face state
-            hud_face = "[ >:D ]" if health >= 95 else ("[ :D ]" if health >= 70 else ("[ :| ]" if health >= 40 else "[ D: ]"))
-            if health <= 0:
-                hud_face = "[ X_X ]"
-
-            log_entry = (
-                f"Turn {turn:02d} | HUD: {hud_face} {health}% HP | "
-                f"Action: {chosen_action.split('(')[0].strip().upper()} "
-                f"(EU: {decision.optimal_action_utility:+.1f} | Conf: {decision.confidence*100:.1f}% | L{decision.decision_emergence_layer or 24}) | "
-                f"{summary_msg}"
-            )
-            telemetry_logs.append(log_entry)
-
-            if console:
-                console.print(f"  {log_entry}")
-
-        # Compute id Software End-Level Scorecard
+        # Compute factual end-of-level scorecard from live engine counters.
+        # demons_slain / pickups_collected above are authoritative ViZDoom
+        # KILLCOUNT / ITEMCOUNT deltas; no damage was fabricated.
         total_spawned_monsters = len(doom_map.monsters)
         total_spawned_pickups = len(doom_map.pickups)
         kill_pct = (demons_slain / max(1, total_spawned_monsters)) * 100.0
         item_pct = (pickups_collected / max(1, total_spawned_pickups)) * 100.0
         mean_lat = float(np.mean(latencies)) if latencies else 0.0
         throughput = float(1000.0 / max(1e-6, mean_lat))
-        status_str = "LEVEL CLEARED" if (not active_monsters or health > 0) else "SLAIN IN COMBAT"
+        # Scenario-defined outcome: WAD-map proxy is kills > 0 or survival.
+        # "LEVEL CLEARED" would require exit-switch tracking, which the engine
+        # run does not provide; report the proxy honestly.
+        status_str = "OBJECTIVE MET" if (viz_report.episodes_won > 0) else "EPISODE END"
 
         report = RealDoomScoreReport(
             map_code=doom_map.map_code,
@@ -512,38 +417,52 @@ class RealDoomEvaluator:
             score_table = Table(box=DOUBLE)
             score_table.add_column("Score Metric", style="bold white")
             score_table.add_column("Level Result", style="bold yellow")
-            score_table.add_column("Rating / Assessment", style="bold green")
 
             score_table.add_row(
-                "KILLS (Demons Slain)",
-                f"{demons_slain} / {total_spawned_monsters} ({kill_pct:.1f}%)",
-                "[bold green]EXCELLENT COMBAT RUN[/bold green]" if kill_pct >= 50 else "[yellow]TACTICAL RETREAT[/yellow]"
+                "KILLS (engine KILLCOUNT)",
+                f"{demons_slain} / {total_spawned_monsters} spawned ({kill_pct:.1f}%)",
             )
             score_table.add_row(
-                "ITEMS (Pickups Gathered)",
-                f"{pickups_collected} / {total_spawned_pickups} ({item_pct:.1f}%)",
-                "SUPPLY EFFICIENT"
+                "ITEMS (engine ITEMCOUNT)",
+                f"{pickups_collected} / {total_spawned_pickups} spawned ({item_pct:.1f}%)",
             )
             score_table.add_row(
-                "SURVIVAL VITALITY",
-                f"{health}% Health | {armor}% Armor",
-                "[bold green]VICTORIOUS SURVIVOR[/bold green]" if health > 0 else "[bold red]DEFEATED[/bold red]"
+                "DEATHS (engine DEATHCOUNT)",
+                str(viz_report.total_deaths),
+            )
+            score_table.add_row(
+                "FINAL HEALTH / ARMOR (mean)",
+                f"{health}% / {armor}%",
             )
             score_table.add_row(
                 "MEAN DECISION LATENCY",
-                f"{mean_lat:.2f} ms",
-                f"[bold cyan]{throughput:.1f} decisions / sec[/bold cyan]"
+                f"{mean_lat:.2f} ms ({throughput:.1f} decisions / sec)",
             )
             score_table.add_row(
-                "ACCUMULATED EXPECTED UTILITY",
+                "TOTAL EXPECTED UTILITY",
                 f"{accumulated_eu:+.1f} EU",
-                "[bold green]POSITIVE REGRET-MINIMAL POLICY[/bold green]"
             )
             score_table.add_row(
-                "MISSION STATUS",
-                f"[bold green]{status_str}[/bold green]" if health > 0 else "[bold red]FAILED[/bold red]",
-                "AUTHENTIC IWAD LEVEL VERIFIED"
+                "OUTCOME",
+                status_str,
             )
             console.print(score_table)
+
+        if output_path:
+            artifact = {
+                "experiment": "real_doom",
+                "map_code": doom_map.map_code,
+                "map_title": doom_map.title,
+                "wad_path": parser.wad_path,
+                "wad_spawned_monsters": total_spawned_monsters,
+                "wad_spawned_pickups": total_spawned_pickups,
+                "seed": seed,
+                "policy": policy,
+                "observation_mode": observation_mode,
+                "vizdoom": viz_report.to_dict(),
+            }
+            out = Path(output_path)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
 
         return report
