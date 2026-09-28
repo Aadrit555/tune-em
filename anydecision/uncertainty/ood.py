@@ -1,8 +1,14 @@
-"""Out-of-distribution (OOD) and distribution shift diagnostics.
+"""Distribution-shift suspicion heuristics (NOT a validated OOD detector).
 
 IMPORTANT RESEARCH NOTICE:
-These statistical signals serve as observable heuristics and cautionary diagnostics.
-They are NOT a guarantee against catastrophic distribution shift or adversarial evasion.
+These statistical signals (entropy, confidence collapse, prompt instability,
+embedding distance) are observable heuristics and cautionary diagnostics.
+They are NOT a formal OOD detector: no AUROC/AUPR/FPR95 validation on
+in-distribution vs near-OOD vs semantic-OOD benchmarks has been performed.
+Use the names "shift suspicion" / "distribution-shift heuristic" /
+"instability signal" rather than "OOD detection" until such validation exists.
+They are NOT a guarantee against catastrophic distribution shift or
+adversarial evasion.
 """
 
 from __future__ import annotations
@@ -16,7 +22,12 @@ from anydecision.uncertainty.entropy import normalized_entropy
 
 
 class OODDiagnosticsResult(BaseModel):
-    """Observable OOD and distribution shift signals for a decision."""
+    """Observable distribution-shift suspicion signals for a decision.
+
+    Field name ``ood_score`` is retained for backward compatibility but must
+    be read as a heuristic shift-suspicion score in [0, 1], not a validated
+    OOD-detection probability.
+    """
     ood_score: float = Field(
         default=0.0,
         description="Composite heuristic score [0, 1] where higher indicates higher shift suspicion."
@@ -35,8 +46,11 @@ class OODDiagnosticsResult(BaseModel):
     )
 
 
-class OODDetector:
-    """Computes distribution shift diagnostics across prompt perturbations and entropy profiles."""
+class DistributionShiftHeuristic:
+    """Computes distribution-shift suspicion heuristics across prompt perturbations and entropy profiles.
+
+    This is a heuristic diagnostic; it is not a validated OOD detector.
+    """
 
     def __init__(
         self,
@@ -119,4 +133,10 @@ class OODDetector:
             signals=signals,
             warning=warning,
         )
+
+
+# Backward-compatible alias. New code should use DistributionShiftHeuristic,
+# which makes the heuristic (non-validated) nature explicit.
+class OODDetector(DistributionShiftHeuristic):
+    """Deprecated alias for DistributionShiftHeuristic (heuristic, not validated OOD detection)."""
 

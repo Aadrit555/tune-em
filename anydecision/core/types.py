@@ -63,7 +63,7 @@ class Diagnostics(BaseModel):
     tokens_processed: int = Field(default=0, description="Total tokens processed across all forward passes.")
     tokens_estimated: bool = Field(default=True, description="True when token counts are estimates, not exact tokenizer counts.")
     exit_reason: Optional[str] = Field(default=None, description="Adaptive exit reason (e.g. l0_confident, l1_confident, budget_exhausted, latency_sla, l2_complete).")
-    ood_score: Optional[float] = Field(default=None, description="Out-of-distribution distance/entropy diagnostic.")
+    ood_score: Optional[float] = Field(default=None, description="Distribution-shift suspicion heuristic score (not validated OOD detection).")
     ood_warning: Optional[str] = Field(default=None, description="OOD diagnostic caution message if triggered.")
     decision_emergence_layer: Optional[int] = Field(default=None, description="Earliest transformer layer where decision emerged.")
     layer_trajectory: Optional[Dict[str, Any]] = Field(default=None, description="Trajectory dynamics across layer depth.")

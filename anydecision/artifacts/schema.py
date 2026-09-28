@@ -10,7 +10,15 @@ from anydecision._version import __version__
 
 
 class IntegrityBlock(BaseModel):
-    sha256: str = Field(description="Cryptographic SHA-256 hash of the artifact payload.")
+    sha256: str = Field(description="SHA-256 tamper-detection hash of the artifact payload (not a signature).")
+    ed25519_signature: Optional[str] = Field(
+        default=None,
+        description="Optional Ed25519 signature (hex) over the canonical payload hash for authenticity.",
+    )
+    ed25519_public_key: Optional[str] = Field(
+        default=None,
+        description="Optional Ed25519 public key (hex) that verifies ed25519_signature.",
+    )
 
 
 class ArtifactManifest(BaseModel):
