@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 
 from anydecision.backends.base import BaseBackend, ModelMetadata
 from anydecision.scoring.candidate_tokenizer import (
-    CandidateTokenInfo,
     requires_sequence_scoring_for_candidates,
     tokenize_candidate_set,
 )
@@ -200,6 +198,102 @@ class TransformersBackend(BaseBackend):
     ) -> Dict[str, float]:
         res = self.sequence_logprobs_detailed(prompt, candidate_strings, scoring_method)
         return res["conditional_logprobs"]
+
+    def _final_norm(self, hidden: "torch.Tensor") -> "torch.Tensor":
+        """Apply the model's final layer-norm if the architecture exposes one."""
+        model = self.model
+        for attr_path in ("model.norm", "transformer.ln_f", "gpt_neox.final_layer_norm"):
+            obj: object = model
+            try:
+                for part in attr_path.split("."):
+                    obj = getattr(obj, part)
+                norm = obj
+            except AttributeError:
+                continue
+            if hasattr(norm, "__call__"):
+                weight = getattr(norm, "weight", None)
+                probe = hidden.to(dtype=weight.dtype) if weight is not None else hidden
+                try:
+                    return norm(probe).to(torch.float32)  # type: ignore[operator]
+                except (AttributeError, RuntimeError, TypeError):
+                    continue
+        return hidden.to(torch.float32)
+
+    def get_layer_hidden_states(
+        self,
+        prompt: str,
+        layers: Optional[List[int]] = None,
+    ) -> Dict[int, np.ndarray]:
+        """Real per-layer last-token hidden states (1-based layer indices)."""
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            outputs = self.model(**inputs, output_hidden_states=True)
+        hidden = outputs.hidden_states
+        if not hidden:
+            return {}
+        num_layers = len(hidden) - 1
+        wanted = layers or list(range(1, num_layers + 1))
+        states: Dict[int, np.ndarray] = {}
+        for l in wanted:
+            if 1 <= l <= num_layers:
+                vec = hidden[l][0, -1, :].to(torch.float32).cpu().numpy()
+                states[int(l)] = vec
+        return states
+
+    def get_layer_logprobs(
+        self,
+        prompt: str,
+        candidate_strings: Dict[str, str],
+        layers: Optional[List[int]] = None,
+    ) -> Dict[int, Dict[str, float]]:
+        """Logit-lens candidate logprobs per layer.
+
+        Each requested layer's last-token hidden state is projected through the
+        model's final norm (where exposed) and lm_head. The final layer equals
+        the standard next-token readout; earlier layers are the standard
+        logit-lens approximation and are documented as such (not exact
+        early-exited predictions).
+        """
+        candidate_infos = tokenize_candidate_set(self.tokenizer, prompt, candidate_strings)
+        first_ids = {
+            key: (info.candidate_token_ids[0] if info.candidate_token_ids else None)
+            for key, info in candidate_infos.items()
+        }
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            outputs = self.model(**inputs, output_hidden_states=True)
+        hidden = outputs.hidden_states
+        if not hidden:
+            return {}
+        num_layers = len(hidden) - 1
+        wanted = layers or list(range(1, num_layers + 1))
+        lm_head = getattr(self.model, "lm_head", None)
+        if lm_head is None:
+            return {}
+        results: Dict[int, Dict[str, float]] = {}
+        with torch.no_grad():
+            for l in wanted:
+                if not (1 <= l <= num_layers):
+                    continue
+                h = hidden[l][0, -1, :]
+                head_weight = getattr(lm_head, "weight", None)
+                head_dtype = head_weight.dtype if head_weight is not None else torch.float32
+                h_in = h.to(dtype=head_dtype).unsqueeze(0)
+                try:
+                    logits = lm_head(self._final_norm(h_in)).to(torch.float32)[0]
+                except RuntimeError:
+                    logits = lm_head(h_in).to(torch.float32)[0]
+                vocab_lps = torch.log_softmax(logits, dim=-1).cpu().numpy()
+                raw = {
+                    key: (float(vocab_lps[tid]) if tid is not None and 0 <= tid < len(vocab_lps) else -1e9)
+                    for key, tid in first_ids.items()
+                }
+                keys = list(raw.keys())
+                scores = np.array([raw[k] for k in keys], dtype=np.float64)
+                max_s = np.max(scores)
+                normed = scores - (max_s + np.log(np.sum(np.exp(scores - max_s))))
+                results[int(l)] = {k: float(v) for k, v in zip(keys, normed)}
+        return results
 
     def batch_next_token_logprobs(
         self,

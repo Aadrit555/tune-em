@@ -1,8 +1,13 @@
 """Layer-trajectory uncertainty and internal representation dynamics analysis.
 
-Inspects hidden representations and candidate probabilities across transformer layers
-(e.g., layers 4, 8, 12, 16, 20, 24, 28, 32). Extracts decision emergence layer,
-prediction stability, confidence growth, representation convergence, and layer disagreement.
+EXPERIMENTAL: validated on GPT-2 scale plus mock illustration; not yet
+demonstrated across diverse architectures (Llama/Qwen/Mistral/Gemma/Phi).
+
+Inspects real hidden representations and logit-lens candidate probabilities
+across transformer layers (e.g., layers 4, 8, 12, 16, 20, 24, 28, 32).
+Extracts decision emergence layer, prediction stability, confidence growth,
+representation convergence, and layer disagreement. Early-layer readouts are
+the logit-lens approximation (exact only at the final layer).
 """
 
 from __future__ import annotations
