@@ -227,3 +227,25 @@ def real_doom(
     )
 
 
+@app.command("vizdoom")
+def vizdoom_cmd(
+    scenario: str = typer.Option("basic", "--scenario", "-s", help="ViZDoom scenario: basic, defend_the_center, deadly_corridor, etc."),
+    episodes: int = typer.Option(3, "--episodes", "-e", help="Number of benchmark episodes"),
+    wad: Optional[str] = typer.Option(None, "--wad", "-w", help="Optional path to custom DOOM.WAD binary"),
+    model: str = typer.Option("mock", "--model", help="Decision model backend"),
+    render: bool = typer.Option(False, "--render", help="Render graphical game window"),
+) -> None:
+    """Run live reinforcement learning benchmark using ViZDoom (Farama Foundation)."""
+    from anydecision.games.vizdoom_env import ViZDoomDecisionRunner
+    engine = DecisionEngine(model=model)
+    ViZDoomDecisionRunner.run_simulation(
+        engine=engine,
+        scenario=scenario,
+        num_episodes=episodes,
+        wad_path=wad,
+        window_visible=render,
+        render_console=True,
+    )
+
+
+

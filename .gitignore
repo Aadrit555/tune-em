@@ -36,3 +36,8 @@ scratch/
 *.bin
 !anydecision/tests/data/*.safetensors
 
+# ViZDoom local config
+*.ini
+_vizdoom.ini
+
+

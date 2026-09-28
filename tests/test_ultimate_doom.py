@@ -95,3 +95,4 @@ def test_real_doom_cli_command(wad_path):
     assert result.exit_code == 0
     assert "ULTIMATE DOOM" in result.output
     assert "SCORECARD" in result.output
+

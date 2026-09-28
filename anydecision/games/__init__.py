@@ -17,6 +17,12 @@ from anydecision.games.ultimate_doom import (
     UltimateDoomWadParser,
 )
 
+from anydecision.games.vizdoom_env import (
+    ViZDoomDecisionRunner,
+    ViZDoomScoreReport,
+    is_vizdoom_available,
+)
+
 __all__ = [
     "DoomActionOutcome",
     "DoomCombatBenchmarkRunner",
@@ -29,5 +35,9 @@ __all__ = [
     "RealDoomScoreReport",
     "RealWadEntity",
     "UltimateDoomWadParser",
+    "ViZDoomDecisionRunner",
+    "ViZDoomScoreReport",
+    "is_vizdoom_available",
 ]
+
 
