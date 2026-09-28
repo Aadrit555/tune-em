@@ -84,3 +84,50 @@ def test_decision_compiler_plan_explain():
     assert plan.num_candidate_options == 3
     assert plan.total_forward_passes >= 1
     assert "COMPILED DECISION EXECUTION PLAN" in plan.explain()
+
+
+def test_from_action_costs_explicit_mapping_no_name_guessing():
+    # fraud -> fraud_block must NOT be inferred from names; explicit mapping required.
+    costs = {"fraud_block": 0.0, "approve": 0.0, "manual_review": -2.0}
+    states = ["fraud", "legitimate"]
+    default = UtilityMatrix.from_action_costs(costs, states)
+    # Without explicit mapping, fraud_block does not match "fraud" (exact equality only).
+    assert default.matrix["fraud_block"]["fraud"] == pytest.approx(-20.0)
+    explicit = UtilityMatrix.from_action_costs(
+        costs, states, correct_action_for_state={"fraud": "fraud_block", "legitimate": "approve"}
+    )
+    assert explicit.matrix["fraud_block"]["fraud"] == pytest.approx(10.0)
+    assert explicit.matrix["approve"]["legitimate"] == pytest.approx(10.0)
+    assert explicit.matrix["fraud_block"]["legitimate"] == pytest.approx(-20.0)
+    # Safe fallback keeps constant cost regardless of state.
+    assert explicit.matrix["manual_review"]["fraud"] == pytest.approx(-2.0)
+    assert explicit.matrix["manual_review"]["legitimate"] == pytest.approx(-2.0)
+    # Case-insensitive guessing is never performed.
+    case_costs = {"FRAUD": 0.0}
+    case_mat = UtilityMatrix.from_action_costs(case_costs, ["fraud"])
+    assert case_mat.matrix["FRAUD"]["fraud"] == pytest.approx(-20.0)
+
+
+def test_standard_classification_costs_permutation_invariance():
+    classes_a = ["fraud", "legitimate"]
+    classes_b = ["legitimate", "fraud"]
+    m_a = UtilityMatrix.standard_classification_costs(
+        classes_a, cost_false_positive=5.0, cost_false_negative=20.0, positive_class="fraud"
+    )
+    m_b = UtilityMatrix.standard_classification_costs(
+        classes_b, cost_false_positive=5.0, cost_false_negative=20.0, positive_class="fraud"
+    )
+    # Missing the positive class costs FN regardless of ordering.
+    assert m_a.matrix["act_legitimate"]["fraud"] == pytest.approx(-20.0)
+    assert m_b.matrix["act_legitimate"]["fraud"] == pytest.approx(-20.0)
+    assert m_a.matrix["act_fraud"]["legitimate"] == pytest.approx(-5.0)
+    assert m_b.matrix["act_fraud"]["legitimate"] == pytest.approx(-5.0)
+    # Symmetric default: no ordering dependence.
+    s_a = UtilityMatrix.standard_classification_costs(classes_a)
+    s_b = UtilityMatrix.standard_classification_costs(classes_b)
+    assert s_a.matrix["act_legitimate"]["fraud"] == pytest.approx(
+        s_b.matrix["act_legitimate"]["fraud"]
+    )
+    # Invalid positive class fails loudly.
+    with pytest.raises(ValueError):
+        UtilityMatrix.standard_classification_costs(classes_a, positive_class="unknown")

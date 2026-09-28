@@ -114,6 +114,9 @@ class DecisionEngine:
             trace: If True, attach step-by-step DecisionTrace to output.
             scoring_method: Multi-token sequence scoring algorithm.
             actions: Dict of action -> intrinsic cost (e.g. {'approve': 0, 'reject': -10, 'human_review': -2}).
+                Uses exact action==state equality for the match bonus; for semantic
+                mappings (e.g. fraud -> fraud_block) pass an explicit utility_matrix
+                built with UtilityMatrix.from_action_costs(..., correct_action_for_state={...}).
             utility_matrix: Explicit UtilityMatrix defining rewards/penalties U(a, y).
             policy: Optional DecisionPolicy overriding engine defaults.
             adaptive: If True, dynamically routes through L0 -> L1 -> L2 with early exit.

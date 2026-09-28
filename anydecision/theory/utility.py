@@ -25,8 +25,21 @@ class UtilityMatrix(BaseModel):
         cls,
         action_costs: Dict[str, float],
         states: List[str],
+        correct_action_for_state: Optional[Dict[str, str]] = None,
+        correct_reward: float = 10.0,
+        incorrect_penalty: float = -20.0,
+        safe_actions: Tuple[str, ...] = ("human_review", "escalate", "abstain", "manual_review"),
     ) -> UtilityMatrix:
-        """Create utility matrix where actions have intrinsic costs/utilities relative to matched state."""
+        """Create utility matrix with an explicit action<->state mapping.
+
+        No semantic relationship is inferred from action/state names.  The
+        caller must pass ``correct_action_for_state`` (state -> correct
+        action) for non-trivial mappings such as ``{"fraud": "fraud_block"}``.
+        When it is omitted, only exact string equality (``act == state``)
+        counts as a match; case-insensitive / substring guessing is never
+        performed.  Safe fallback actions receive ``base_cost`` in every
+        state; all other mismatches receive ``incorrect_penalty + base_cost``.
+        """
         actions = list(action_costs.keys())
         matrix: Dict[str, Dict[str, float]] = {}
 
@@ -34,15 +47,19 @@ class UtilityMatrix(BaseModel):
             matrix[act] = {}
             base_cost = action_costs[act]
             for state in states:
-                # If action name matches state (e.g. state="fraud", act="fraud_block"), reward = 0, penalty if wrong
-                if act.lower() == state.lower():
-                    matrix[act][state] = 10.0 + base_cost
-                elif act in ("human_review", "escalate", "abstain"):
-                    # Safe fallbacks take the constant cost regardless of state
+                if act in safe_actions:
+                    # Safe fallbacks take the constant cost regardless of state.
                     matrix[act][state] = base_cost
+                    continue
+                if correct_action_for_state is not None:
+                    is_correct = correct_action_for_state.get(state) == act
                 else:
-                    # Incorrect action penalty
-                    matrix[act][state] = -20.0 + base_cost
+                    # Explicit default: exact equality only, never fuzzy matching.
+                    is_correct = (act == state)
+                if is_correct:
+                    matrix[act][state] = correct_reward + base_cost
+                else:
+                    matrix[act][state] = incorrect_penalty + base_cost
 
         return cls(actions=actions, states=states, matrix=matrix)
 
@@ -53,8 +70,22 @@ class UtilityMatrix(BaseModel):
         cost_false_positive: float = 5.0,
         cost_false_negative: float = 20.0,
         human_review_cost: float = 2.0,
+        positive_class: Optional[str] = None,
     ) -> UtilityMatrix:
-        """Construct standard asymmetric cost matrix with automated human-in-the-loop fallback."""
+        """Construct standard asymmetric cost matrix with human-in-the-loop fallback.
+
+        ``positive_class`` names the state for which a miss counts as a false
+        negative (``-cost_false_negative``); misses on any other state cost
+        ``-cost_false_positive``.  Cost semantics are therefore invariant to
+        the ordering of ``classes``.  If ``positive_class`` is None, all
+        misclassifications cost ``-cost_false_positive`` (symmetric) so that
+        no ordering-dependent assumption is made silently.  ``positive_class``
+        must be a member of ``classes`` when given.
+        """
+        if positive_class is not None and positive_class not in classes:
+            raise ValueError(
+                f"positive_class={positive_class!r} must be one of classes={classes}."
+            )
         actions = [f"act_{c}" for c in classes] + ["human_review"]
         matrix: Dict[str, Dict[str, float]] = {}
 
@@ -65,7 +96,14 @@ class UtilityMatrix(BaseModel):
                 if c_act == c_state:
                     matrix[act_name][c_state] = 0.0  # Zero cost for correct classification
                 else:
-                    matrix[act_name][c_state] = -cost_false_negative if c_state == classes[0] else -cost_false_positive
+                    if positive_class is None:
+                        matrix[act_name][c_state] = -cost_false_positive
+                    else:
+                        matrix[act_name][c_state] = (
+                            -cost_false_negative
+                            if c_state == positive_class
+                            else -cost_false_positive
+                        )
 
         # Human review cost
         matrix["human_review"] = {c_state: -human_review_cost for c_state in classes}
