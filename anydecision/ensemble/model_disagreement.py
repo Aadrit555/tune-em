@@ -160,3 +160,7 @@ class MultiModelEnsemble:
             model_contributions=prob_distributions,
             inter_model_entropy=float(h_consensus),
         )
+
+
+# Alias for explicit naming
+MultiModelEnsembleDisagreement = MultiModelEnsemble

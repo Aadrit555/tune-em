@@ -84,6 +84,10 @@ class DecisionContext(BaseModel):
         return "\n".join(prompt_blocks)
 
 
+# Alias for explicit naming
+InjectionResistantContext = DecisionContext
+
+
 class InjectionResistanceBenchmark:
     """Evaluates decision engine resilience against adversarial prompt injection attacks."""
 

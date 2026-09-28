@@ -127,3 +127,4 @@ def test_decision_context_prompt_injection_defense():
 
     assert bench_results["num_attacks_tested"] >= 3
     assert 0.0 <= bench_results["injection_resistance_score"] <= 1.0
+

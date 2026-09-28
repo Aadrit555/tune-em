@@ -175,3 +175,26 @@ def tui(
     from anydecision.tui.app import run_tui
     run_tui(model=model)
 
+
+@app.command()
+def doom(
+    episodes: int = typer.Option(3, "--episodes", "-e", help="Number of DOOM combat episodes to simulate"),
+    difficulty: str = typer.Option("medium", "--difficulty", "-d", help="Difficulty: medium, hard, or boss"),
+    model: str = typer.Option("mock", "--model", "-m", help="Decision model backend"),
+) -> None:
+    """Run real-time DOOM combat tactical decision benchmark."""
+    from anydecision.games.doom import DoomCombatBenchmarkRunner
+    engine = DecisionEngine(model=model)
+    console.print(f"[bold red]Initializing DOOM Tactical AI Combat Benchmark ({difficulty.upper()} difficulty)...[/bold red]")
+    stats = DoomCombatBenchmarkRunner.run_simulation(
+        engine=engine,
+        num_episodes=episodes,
+        difficulty=difficulty,
+        render_console=True,
+    )
+    console.print("\n[bold green]=== DOOM COMBAT BENCHMARK RESULTS ===[/bold green]")
+    console.print(f"Episodes Survived:     {stats['num_episodes'] * stats['survival_rate']:.0f}/{stats['num_episodes']} ({stats['survival_rate']*100:.1f}%)")
+    console.print(f"Total Demons Slain:    {stats['total_kills']}")
+    console.print(f"Mean Decision Latency: {stats['mean_latency_ms']:.2f} ms")
+    console.print(f"Throughput:            {stats['decisions_per_second']:.1f} decisions / sec")
+

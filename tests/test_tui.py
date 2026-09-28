@@ -58,3 +58,4 @@ def test_cli_tui_help():
     result = runner.invoke(app, ["tui", "--help"])
     assert result.exit_code == 0
     assert "Launch the interactive Linux terminal-based UI" in result.output
+

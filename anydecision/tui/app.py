@@ -185,6 +185,8 @@ class TerminalUI:
                     self.view_security_audit_console()
                 elif choice == "6":
                     self.view_switch_model()
+                elif choice == "7":
+                    self.view_doom_arena()
                 elif choice.lower() == "q":
                     self.running = False
                     self.console.print("\n[bold cyan]Exiting anydecision terminal UI. Goodbye.[/bold cyan]\n")
@@ -229,6 +231,11 @@ class TerminalUI:
             "[6]",
             "Switch Backend / Model",
             f"Currently active: {self.engine.metadata.backend_name} ({self.engine.metadata.model_name})",
+        )
+        menu_table.add_row(
+            "[7]",
+            "DOOM Tactical Combat Arena",
+            "Real-time AI combat simulation: Imps, Barons of Hell, Cyberdemon with Expected Utility survival policies",
         )
         menu_table.add_row(
             "[Q]",
@@ -680,3 +687,4 @@ def run_tui(model: str = "mock") -> None:
 
 if __name__ == "__main__":
     run_tui()
+
