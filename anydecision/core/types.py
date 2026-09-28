@@ -61,6 +61,8 @@ class Diagnostics(BaseModel):
     compute_path: List[str] = Field(default_factory=lambda: ["L0"], description="Sequence of levels/readouts executed.")
     layers_executed: Optional[int] = Field(default=None, description="Number of model layers executed.")
     tokens_processed: int = Field(default=0, description="Total tokens processed across all forward passes.")
+    tokens_estimated: bool = Field(default=True, description="True when token counts are estimates, not exact tokenizer counts.")
+    exit_reason: Optional[str] = Field(default=None, description="Adaptive exit reason (e.g. l0_confident, l1_confident, budget_exhausted, latency_sla, l2_complete).")
     ood_score: Optional[float] = Field(default=None, description="Out-of-distribution distance/entropy diagnostic.")
     ood_warning: Optional[str] = Field(default=None, description="OOD diagnostic caution message if triggered.")
     decision_emergence_layer: Optional[int] = Field(default=None, description="Earliest transformer layer where decision emerged.")

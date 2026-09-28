@@ -94,6 +94,14 @@ class MockBackend(BaseBackend):
 
         return {k: float(lp) for k, lp in zip(keys, log_probs)}
 
+    @property
+    def token_counts_exact(self) -> bool:
+        return False
+
+    def count_tokens(self, text: str) -> int:
+        """Whitespace estimate only. Always label results as estimated."""
+        return max(1, len(text.split()))
+
     def requires_sequence_scoring(
         self,
         prompt: str,

@@ -150,6 +150,14 @@ class Decision(BaseModel):
         default=0,
         description="Total number of input/candidate tokens processed."
     )
+    tokens_estimated: bool = Field(
+        default=True,
+        description="True when tokens_processed is estimated rather than measured with the model tokenizer."
+    )
+    exit_reason: Optional[str] = Field(
+        default=None,
+        description="Adaptive exit reason (e.g. l0_confident, l1_confident, budget_exhausted, latency_sla, l2_complete)."
+    )
     latency_ms: float = Field(
         default=0.0,
         description="Total execution latency in milliseconds."

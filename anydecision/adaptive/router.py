@@ -49,6 +49,29 @@ class AdaptiveComputeRouter:
     def __init__(self, config: Optional[AdaptiveComputeConfig] = None) -> None:
         self.config = config or AdaptiveComputeConfig()
 
+    def _measure_prompt_tokens(self, engine: DecisionEngine, question: Question) -> tuple[int, bool]:
+        """Exact tokenizer count when the backend provides one, else labeled estimate."""
+        try:
+            n = int(engine.backend.count_tokens(question.text))
+        except Exception:
+            n = max(1, len(question.text.split()))
+            return n, True
+        exact = bool(getattr(engine.backend, "token_counts_exact", False))
+        return n, (not exact)
+
+    def _predict_calls(self, engine: DecisionEngine, level: DecisionLevel, question: Question) -> int:
+        """Predict forward passes for a stage without executing it (budget pre-check)."""
+        try:
+            if level == DecisionLevel.L0:
+                return len(question.options) if question.answer_type.value == "multi_choice" else 1
+            n_perms = int(getattr(engine.policy, "num_permutations", 4))
+            n_templates = len(getattr(engine.policy, "templates", ["minimal"]) or ["minimal"])
+            if level == DecisionLevel.L1:
+                return max(1, n_perms * max(1, n_templates))
+            return max(1, n_perms * max(1, n_templates))
+        except Exception:
+            return 1
+
     def decide_adaptive(
         self,
         engine: DecisionEngine,
@@ -56,14 +79,43 @@ class AdaptiveComputeRouter:
         policy: Optional[DecisionPolicy] = None,
         **kwargs: Any,
     ) -> Decision:
-        """Execute decision using minimal compute necessary to satisfy confidence requirements."""
+        """Execute decision using minimal compute necessary to satisfy confidence requirements.
+
+        Token accounting uses the backend tokenizer when available
+        (``tokens_estimated=False``); otherwise counts are whitespace estimates
+        (``tokens_estimated=True``).  ``max_backend_calls`` is enforced as a
+        hard budget: a stage is never started when its predicted calls would
+        exceed the remaining budget.
+        """
         start_time = time.perf_counter()
         active_policy = policy or engine.policy
         compute_path: List[str] = []
         total_backend_calls = 0
         total_tokens = 0
 
-        # Step 1: Run cheap Level L0 (Raw Single Pass)
+        prompt_tokens, tokens_estimated = self._measure_prompt_tokens(engine, question)
+        per_call_tokens = prompt_tokens + 20  # fixed framing overhead per forward pass
+
+        def elapsed_ms() -> float:
+            return (time.perf_counter() - start_time) * 1000.0
+
+        def finalize(decision: Decision, exit_reason: str) -> Decision:
+            return self._finalize_adaptive_decision(
+                decision=decision,
+                compute_path=compute_path,
+                backend_calls=total_backend_calls,
+                tokens=total_tokens,
+                tokens_estimated=tokens_estimated,
+                exit_reason=exit_reason,
+                latency_ms=elapsed_ms(),
+                engine=engine,
+            )
+
+        # Step 1: L0 (single pass; always within budget unless max < 1)
+        if total_backend_calls + self._predict_calls(engine, DecisionLevel.L0, question) > self.config.max_backend_calls:
+            raise ValueError(
+                f"max_backend_calls={self.config.max_backend_calls} is too small to run even L0."
+            )
         dec_l0 = engine.decide(
             question=question,
             level=DecisionLevel.L0,
@@ -71,54 +123,26 @@ class AdaptiveComputeRouter:
             **kwargs,
         )
         compute_path.append("L0")
-        total_backend_calls += dec_l0.diagnostics.number_of_backend_calls if dec_l0.diagnostics else 1
-        approx_q_tokens = len(question.text.split()) + 20
-        total_tokens += approx_q_tokens
+        l0_calls = dec_l0.diagnostics.number_of_backend_calls if dec_l0.diagnostics else 1
+        total_backend_calls += l0_calls
+        total_tokens += per_call_tokens * l0_calls
 
-        # Check Early Exit on L0: high confidence & low entropy
         entropy_val = dec_l0.diagnostics.entropy if dec_l0.diagnostics else 0.0
         can_exit_l0 = (
             dec_l0.confidence >= self.config.early_exit_l0_confidence
             and entropy_val <= self.config.max_l0_entropy
             and not dec_l0.abstained
         )
-
         if can_exit_l0:
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-            return self._finalize_adaptive_decision(
-                decision=dec_l0,
-                compute_path=compute_path,
-                backend_calls=total_backend_calls,
-                tokens=total_tokens,
-                latency_ms=elapsed_ms,
-                engine=engine,
-            )
-
-        # Check Latency SLA
-        elapsed_so_far = (time.perf_counter() - start_time) * 1000.0
-        if self.config.max_latency_ms and elapsed_so_far >= self.config.max_latency_ms:
-            return self._finalize_adaptive_decision(
-                decision=dec_l0,
-                compute_path=compute_path,
-                backend_calls=total_backend_calls,
-                tokens=total_tokens,
-                latency_ms=elapsed_so_far,
-                engine=engine,
-            )
-
-        # Check if backend calls ceiling reached before L1
+            return finalize(dec_l0, "l0_confident")
+        if self.config.max_latency_ms and elapsed_ms() >= self.config.max_latency_ms:
+            return finalize(dec_l0, "latency_sla")
         if total_backend_calls >= self.config.max_backend_calls:
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-            return self._finalize_adaptive_decision(
-                decision=dec_l0,
-                compute_path=compute_path,
-                backend_calls=total_backend_calls,
-                tokens=total_tokens,
-                latency_ms=elapsed_ms,
-                engine=engine,
-            )
+            return finalize(dec_l0, "budget_exhausted")
 
-        # Step 2: Escalate to Level L1 (Zero-Label Permutation Debiasing)
+        # Step 2: L1 (predicted-budget pre-check: never start if it would exceed)
+        if total_backend_calls + self._predict_calls(engine, DecisionLevel.L1, question) > self.config.max_backend_calls:
+            return finalize(dec_l0, "budget_exhausted")
         dec_l1 = engine.decide(
             question=question,
             level=DecisionLevel.L1,
@@ -128,30 +152,27 @@ class AdaptiveComputeRouter:
         compute_path.append("L1")
         l1_calls = dec_l1.diagnostics.number_of_backend_calls if dec_l1.diagnostics else 4
         total_backend_calls += l1_calls
-        total_tokens += approx_q_tokens * l1_calls
+        total_tokens += per_call_tokens * l1_calls
 
-        # Check Early Exit on L1
         agreement_val = dec_l1.diagnostics.template_agreement if dec_l1.diagnostics else 1.0
         can_exit_l1 = (
             dec_l1.confidence >= self.config.early_exit_l1_confidence
             and agreement_val >= self.config.min_l1_template_agreement
             and not dec_l1.abstained
         )
-
-        # If confident, or if no L2 calibrator exists, or if call ceiling reached, return L1
         has_l2_calibrator = engine.calibrator is not None or engine.adapter.calibrator.fitted
-        if can_exit_l1 or not has_l2_calibrator or total_backend_calls >= self.config.max_backend_calls:
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-            return self._finalize_adaptive_decision(
-                decision=dec_l1,
-                compute_path=compute_path,
-                backend_calls=total_backend_calls,
-                tokens=total_tokens,
-                latency_ms=elapsed_ms,
-                engine=engine,
-            )
+        if can_exit_l1:
+            return finalize(dec_l1, "l1_confident")
+        if not has_l2_calibrator:
+            return finalize(dec_l1, "no_l2_calibrator")
+        if self.config.max_latency_ms and elapsed_ms() >= self.config.max_latency_ms:
+            return finalize(dec_l1, "latency_sla")
+        if total_backend_calls >= self.config.max_backend_calls:
+            return finalize(dec_l1, "budget_exhausted")
 
-        # Step 3: Escalate to Level L2 (Statistical Calibration)
+        # Step 3: L2 (predicted-budget pre-check)
+        if total_backend_calls + self._predict_calls(engine, DecisionLevel.L2, question) > self.config.max_backend_calls:
+            return finalize(dec_l1, "budget_exhausted")
         dec_l2 = engine.decide(
             question=question,
             level=DecisionLevel.L2,
@@ -161,17 +182,9 @@ class AdaptiveComputeRouter:
         compute_path.append("L2")
         l2_calls = dec_l2.diagnostics.number_of_backend_calls if dec_l2.diagnostics else 1
         total_backend_calls += l2_calls
-        total_tokens += approx_q_tokens * l2_calls
+        total_tokens += per_call_tokens * l2_calls
 
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-        return self._finalize_adaptive_decision(
-            decision=dec_l2,
-            compute_path=compute_path,
-            backend_calls=total_backend_calls,
-            tokens=total_tokens,
-            latency_ms=elapsed_ms,
-            engine=engine,
-        )
+        return finalize(dec_l2, "l2_complete")
 
     def _finalize_adaptive_decision(
         self,
@@ -179,6 +192,8 @@ class AdaptiveComputeRouter:
         compute_path: List[str],
         backend_calls: int,
         tokens: int,
+        tokens_estimated: bool,
+        exit_reason: str,
         latency_ms: float,
         engine: DecisionEngine,
     ) -> Decision:
@@ -187,6 +202,8 @@ class AdaptiveComputeRouter:
         d.compute_path = compute_path
         d.backend_calls = backend_calls
         d.tokens_processed = tokens
+        d.tokens_estimated = tokens_estimated
+        d.exit_reason = exit_reason
         d.latency_ms = latency_ms
         d.layers_executed = num_layers * len(compute_path)
 
@@ -194,6 +211,8 @@ class AdaptiveComputeRouter:
             d.diagnostics.compute_path = compute_path
             d.diagnostics.number_of_backend_calls = backend_calls
             d.diagnostics.tokens_processed = tokens
+            d.diagnostics.tokens_estimated = tokens_estimated
+            d.diagnostics.exit_reason = exit_reason
             d.diagnostics.latency_ms = latency_ms
             d.diagnostics.layers_executed = d.layers_executed
 

@@ -71,6 +71,14 @@ class TransformersBackend(BaseBackend):
             context_window=getattr(config, "max_position_embeddings", 4096),
         )
 
+    @property
+    def token_counts_exact(self) -> bool:
+        return True
+
+    def count_tokens(self, text: str) -> int:
+        """Exact token count using the loaded HF tokenizer (no special tokens added)."""
+        return max(1, len(self.tokenizer.encode(text, add_special_tokens=False)))
+
     def requires_sequence_scoring(
         self,
         prompt: str,

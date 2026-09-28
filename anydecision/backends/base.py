@@ -104,6 +104,16 @@ class BaseBackend(ABC):
         """Determine whether any candidate string spans multiple tokens in the context of the prompt."""
         return False
 
+    @property
+    def token_counts_exact(self) -> bool:
+        """True when count_tokens() uses the real model tokenizer; False for estimates."""
+        return False
+
+    def count_tokens(self, text: str) -> int:
+        """Count input tokens for accounting. Base implementation is a whitespace
+        estimate and MUST be treated as estimated (token_counts_exact is False)."""
+        return max(1, len(text.split()))
+
     def next_token_logprobs_detailed(
         self,
         prompt: str,

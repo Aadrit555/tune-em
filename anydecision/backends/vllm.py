@@ -58,6 +58,19 @@ class VLLMBackend(BaseBackend):
             device="cuda",
         )
 
+    @property
+    def token_counts_exact(self) -> bool:
+        return True
+
+    def count_tokens(self, text: str) -> int:
+        """Exact token count using the vLLM-bundled tokenizer."""
+        try:
+            tokenizer = self.llm.get_tokenizer()
+            ids = tokenizer.encode(text)
+            return max(1, len(ids))
+        except Exception:
+            return max(1, len(text.split()))
+
     def requires_sequence_scoring(
         self,
         prompt: str,

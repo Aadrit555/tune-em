@@ -113,3 +113,32 @@ def test_adaptive_router_enforces_max_backend_calls_ceiling():
     decision = engine.decide_adaptive(q, adaptive_config=config)
     assert decision.backend_calls <= 1
     assert decision.compute_path == ["L0"]
+
+
+def test_adaptive_router_never_exceeds_budget_when_escalating():
+    engine = DecisionEngine(model="mock")
+    q = Question.choice("Classify request", ["billing", "tech", "sales", "general"])
+    for budget in (1, 2, 3, 5):
+        config = AdaptiveComputeConfig(
+            early_exit_l0_confidence=0.9999,
+            early_exit_l1_confidence=0.9999,
+            max_backend_calls=budget,
+        )
+        decision = engine.decide_adaptive(q, adaptive_config=config)
+        assert decision.backend_calls <= budget
+        assert decision.exit_reason in (
+            "l0_confident", "l1_confident", "budget_exhausted",
+            "latency_sla", "no_l2_calibrator", "l2_complete",
+        )
+        assert decision.diagnostics.exit_reason == decision.exit_reason
+
+
+def test_adaptive_router_labels_mock_tokens_estimated():
+    engine = DecisionEngine(model="mock")
+    q = Question.choice("Is payment fraud suspected?", ["yes", "no"])
+    decision = engine.decide_adaptive(q)
+    # Mock backend has no real tokenizer: counts must be flagged estimated.
+    assert decision.tokens_estimated is True
+    assert decision.diagnostics.tokens_estimated is True
+    assert decision.tokens_processed > 0
+    assert decision.exit_reason is not None
