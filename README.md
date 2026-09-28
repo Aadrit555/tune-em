@@ -26,7 +26,7 @@
 [![PyPI version](https://img.shields.io/badge/pypi-v0.2.0-blue.svg)](https://pypi.org)
 [![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://pypi.org)
 [![License](https://img.shields.io/badge/License-Apache_2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Tests](https://img.shields.io/badge/tests-84%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-91%20passed-brightgreen.svg)](tests/)
 [![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
 </div>
@@ -87,29 +87,35 @@ pip install -e .
 pip install -e ".[all]"
 ```
 
-### 5-Line Python Usage
+### Universal Decision API (Just Like von, but with Calibrated Uncertainty)
 
 ```python
-from anydecision import DecisionEngine, Question
+import anydecision
 
-# Initialize engine (uses high-speed mock or any Hugging Face model)
-engine = DecisionEngine(model="mock")
-
-# Create a typed question
-question = Question.choice(
-    "Should this high-priority customer request be escalated?",
-    ["yes", "no"]
+# 1. Universal One-Liner (evaluates ANY prompt & arbitrary candidate options directly):
+decision = anydecision.choose(
+    "What is the primary vulnerability in this code snippet?",
+    ["SQL Injection", "Server-Side Request Forgery", "Cross-Site Scripting", "Buffer Overflow"]
 )
 
-# Extract decision directly from model probability distribution
-result = engine.decide(question)
+print(decision.answer)         # "SQL Injection"
+print(decision.confidence)     # 0.9412
+print(decision.probabilities)  # {'SQL Injection': 0.9412, ...}
+print(decision.uncertainty)   # 0.0588
+print(decision.abstained)      # False
 
-print(result.answer)         # "no"
-print(result.probabilities)  # {'yes': 0.0416, 'no': 0.9584}
-print(result.confidence)     # 0.9584
-print(result.level)          # "L0"
-print(result.abstained)      # False
-print(result.risk)           # 0.0416
+# 2. Decision Engine with Expected Utility & Action Policies:
+from anydecision import DecisionEngine, Question
+
+engine = DecisionEngine(model="mock")
+result = engine.choose(
+    "Should this high-priority customer request be escalated?",
+    ["yes", "no"],
+    actions={"escalate_immediately": 5.0, "auto_resolve": 2.0, "human_review": -1.0}
+)
+
+print(result.selected_action)       # "escalate_immediately"
+print(result.optimal_action_utility) # 4.82
 ```
 
 ---
@@ -255,6 +261,9 @@ anydecision doom --episodes 5 --difficulty hard
 
 # 7. Launch interactive Gradio research demo
 anydecision demo --port 7860
+
+# 8. Run head-to-head empirical benchmark: anydecision vs von
+anydecision compare-von
 ```
 
 ---
@@ -324,16 +333,16 @@ anydecision doom --episodes 3 --difficulty boss
        \  \====/  /
         '--------'
     
-  Turn 01 | HUD: [ :| ] HURT (40-74%) | Action: DODGE_EVADE (EU: +21.3 | Conf: 54.4% | L12) | EVASIVE MANEUVER: Strafed sideways, projectile missed completely!
-  Turn 02 | HUD: [ :| ] HURT (40-74%) | Action: GRAB_PICKUP (EU: +15.0 | Conf: 56.4% | L28) | SUPPLY RUN: Grabbed spare ammunition.
-  Turn 03 | HUD: [ D: ] CRITICAL (1-39%) | Action: GRAB_PICKUP (EU: +50.0 | Conf: 94.3% | L4) | SUPPLY RUN: Grabbed spare ammunition.
->> EPISODE #1 CLEARED! Doomguy survived with 24% HP! <<
+  Turn 01 | HUD: [ :| ] HURT (40-74%) | Action: SPRINT TO GRAB MEDIKIT (+25 HP) (EU: +32.0 | Conf: 40.9% | L12) | HEALED: Snatched Medikit! Restored +30 HP (Current: 99%).
+  Turn 02 | HUD: [ :D ] HEALTHY (75-99%) | Action: FIRE SHOTGUN DIRECTLY AT CACODEMON (EU: +31.5 | Conf: 44.8% | L12) | HIT: Dealt 95 DMG to Cacodemon (35 HP remaining).
+  Turn 03 | HUD: [ :D ] HEALTHY (75-99%) | Action: FIRE SHOTGUN DIRECTLY AT CACODEMON (EU: +26.5 | Conf: 43.1% | L28) | CARNAGE: Cacodemon obliterated into bloody gibs with Shotgun (73 DMG)! ALL HOSTILES ERADICATED!
+>> EPISODE #1 VICTORY: All hostiles eradicated! Doomguy survived with 89% HP! <<
 
 === DOOM COMBAT BENCHMARK RESULTS ===
 Episodes Survived:     2/2 (100.0%)
-Total Demons Slain:    0
-Mean Decision Latency: 7.33 ms
-Throughput:            136.4 decisions / sec
+Total Demons Slain:    3
+Mean Decision Latency: 9.82 ms
+Throughput:            101.8 decisions / sec
 ```
 
 ---

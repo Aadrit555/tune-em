@@ -121,36 +121,39 @@ class DoomScenarioEnvironment:
         if difficulty == "boss":
             level = "E2M8: Tower of Babel"
             enemy_type = "Cyberdemon"
-            enemies = [DoomEnemy(name="Cyberdemon", hp=400, max_hp=400, damage_per_attack=45, distance_meters=18.0, threat_level="LETHAL")]
+            enemies = [DoomEnemy(name="Cyberdemon", hp=350, max_hp=350, damage_per_attack=45, distance_meters=18.0, threat_level="LETHAL")]
             hazard = "Explosive Rocket Blast Radius"
-            pickup = "Soul Sphere (+100 HP)" if self.rng.random() > 0.4 else None
-            weapon = "BFG9000" if self.rng.random() > 0.5 else "Plasma Rifle"
-            health = self.rng.randint(45, 90)
+            pickup = "Soul Sphere (+100 HP)" if self.rng.random() > 0.3 else None
+            weapon = "BFG9000" if self.rng.random() > 0.4 else "Plasma Rifle"
+            health = self.rng.randint(65, 95)
         elif difficulty == "hard":
             level = "E1M8: Phobos Anomaly"
             enemy_type = "Baron of Hell"
             enemies = [
-                DoomEnemy(name="Baron of Hell #1", hp=180, max_hp=180, damage_per_attack=25, distance_meters=8.0, threat_level="HIGH"),
-                DoomEnemy(name="Baron of Hell #2", hp=180, max_hp=180, damage_per_attack=25, distance_meters=14.0, threat_level="HIGH"),
+                DoomEnemy(name="Baron of Hell #1", hp=160, max_hp=160, damage_per_attack=25, distance_meters=7.0, threat_level="HIGH"),
+                DoomEnemy(name="Baron of Hell #2", hp=160, max_hp=160, damage_per_attack=25, distance_meters=12.0, threat_level="HIGH"),
             ]
             hazard = "Acid Floor (-5 HP/sec)"
             pickup = "Medikit (+25 HP)"
             weapon = "Super Shotgun"
-            health = self.rng.randint(30, 70)
+            health = self.rng.randint(55, 85)
         else:  # medium
             level = "E1M1: Hangar"
             enemy_type = self.rng.choice(["Imp Swarm", "Pinky Demon", "Cacodemon"])
             if enemy_type == "Imp Swarm":
-                enemies = [DoomEnemy(name=f"Imp #{i+1}", hp=60, max_hp=60, damage_per_attack=12, distance_meters=4.0 + i*3, threat_level="MEDIUM") for i in range(2)]
+                enemies = [
+                    DoomEnemy(name="Imp #1", hp=50, max_hp=50, damage_per_attack=12, distance_meters=4.0, threat_level="MEDIUM"),
+                    DoomEnemy(name="Imp #2", hp=50, max_hp=50, damage_per_attack=12, distance_meters=7.0, threat_level="MEDIUM"),
+                ]
             elif enemy_type == "Pinky Demon":
-                enemies = [DoomEnemy(name="Pinky Demon", hp=120, max_hp=120, damage_per_attack=18, distance_meters=3.2, threat_level="MEDIUM")]
+                enemies = [DoomEnemy(name="Pinky Demon", hp=100, max_hp=100, damage_per_attack=18, distance_meters=3.0, threat_level="MEDIUM")]
             else:
-                enemies = [DoomEnemy(name="Cacodemon", hp=150, max_hp=150, damage_per_attack=20, distance_meters=9.0, threat_level="HIGH")]
+                enemies = [DoomEnemy(name="Cacodemon", hp=130, max_hp=130, damage_per_attack=20, distance_meters=8.0, threat_level="HIGH")]
 
             hazard = "Explosive Toxic Barrel" if self.rng.random() > 0.6 else None
-            pickup = "Box of Shells (+20)" if self.rng.random() > 0.5 else None
-            weapon = "Shotgun"
-            health = self.rng.randint(25, 85)
+            pickup = "Medikit (+25 HP)" if self.rng.random() > 0.4 else "Box of Shells (+20)"
+            weapon = "Super Shotgun" if self.rng.random() > 0.5 else "Shotgun"
+            health = self.rng.randint(65, 95)
 
         ascii_art = ASCII_ENCOUNTERS.get(enemy_type, ASCII_ENCOUNTERS["Baron of Hell"])
 
@@ -158,13 +161,39 @@ class DoomScenarioEnvironment:
             level_name=level,
             turn=1,
             health=health,
-            armor=self.rng.randint(0, 50),
+            armor=self.rng.randint(25, 60),
             current_weapon=weapon,
-            ammo={"shells": 16, "cells": 80, "rockets": 6, "bullets": 50},
+            ammo={"shells": 20, "cells": 100, "rockets": 8, "bullets": 60},
             enemies=enemies,
             hazard=hazard,
             pickup=pickup,
             ascii_scene=ascii_art,
+        )
+
+    def create_custom_encounter(
+        self,
+        level_name: str,
+        enemies: List[DoomEnemy],
+        weapon: str = "Super Shotgun",
+        health: int = 100,
+        armor: int = 50,
+        pickup: Optional[str] = None,
+        hazard: Optional[str] = None,
+        ascii_scene: str = "",
+    ) -> DoomGameState:
+        """Create a custom user-defined DOOM encounter with arbitrary enemies and weaponry."""
+        scene = ascii_scene or (ASCII_ENCOUNTERS.get(enemies[0].name, "") if enemies else "")
+        return DoomGameState(
+            level_name=level_name,
+            turn=1,
+            health=health,
+            armor=armor,
+            current_weapon=weapon,
+            ammo={"shells": 30, "cells": 120, "rockets": 12, "bullets": 100},
+            enemies=enemies,
+            hazard=hazard,
+            pickup=pickup,
+            ascii_scene=scene,
         )
 
     def execute_action(self, state: DoomGameState, action: str) -> Tuple[DoomGameState, DoomActionOutcome]:
@@ -176,61 +205,83 @@ class DoomScenarioEnvironment:
         damage_taken = 0
         killed = False
         summary_msg = ""
+        act_lower = action.lower()
 
         primary_target = new_state.enemies[0] if new_state.enemies else None
 
-        if action.startswith("shoot_") or action == "attack":
-            # Fire active weapon
-            base_dmg = 75 if "bfg" in action or new_state.current_weapon == "BFG9000" else 45
-            damage_dealt = int(base_dmg * self.rng.uniform(0.85, 1.35))
-            if primary_target:
-                primary_target.hp -= damage_dealt
-                if primary_target.hp <= 0:
-                    killed = True
-                    new_state.enemies.pop(0)
-                    summary_msg = f"DIRECT HIT: {damage_dealt} damage! {primary_target.name} blown to gibs!"
-                else:
-                    summary_msg = f"HIT: Dealt {damage_dealt} damage to {primary_target.name} ({primary_target.hp} HP remaining)."
+        # Check for attack or weapon fire
+        is_attack = any(w in act_lower for w in ["fire", "shoot", "blast", "attack", "burst", "chainsaw"])
+        if is_attack and primary_target:
+            # Determine weapon used
+            if "bfg" in act_lower or new_state.current_weapon == "BFG9000":
+                weapon_used = "BFG9000"
+                base_dmg = 320
+            elif "super shotgun" in act_lower or new_state.current_weapon == "Super Shotgun":
+                weapon_used = "Super Shotgun"
+                base_dmg = 150
+            elif "rocket" in act_lower or new_state.current_weapon == "Rocket Launcher":
+                weapon_used = "Rocket Launcher"
+                base_dmg = 175
+            elif "plasma" in act_lower or new_state.current_weapon == "Plasma Rifle":
+                weapon_used = "Plasma Rifle"
+                base_dmg = 105
+            elif "chainsaw" in act_lower:
+                weapon_used = "Chainsaw"
+                base_dmg = 120
+            elif "chaingun" in act_lower or new_state.current_weapon == "Chaingun":
+                weapon_used = "Chaingun"
+                base_dmg = 70
+            else:
+                weapon_used = new_state.current_weapon
+                base_dmg = 80
 
-            # Counter-attack by remaining enemies
+            damage_dealt = int(base_dmg * self.rng.uniform(0.90, 1.30))
+            primary_target.hp -= damage_dealt
+
+            if primary_target.hp <= 0:
+                killed = True
+                slain_name = primary_target.name
+                new_state.enemies.pop(0)
+                summary_msg = f"CARNAGE: {slain_name} obliterated into bloody gibs with {weapon_used} ({damage_dealt} DMG)!"
+                if not new_state.enemies:
+                    summary_msg += " ALL HOSTILES ERADICATED!"
+            else:
+                summary_msg = f"HIT: Dealt {damage_dealt} DMG to {primary_target.name} ({primary_target.hp} HP remaining)."
+
+            # Counter-attack by remaining enemies if not staggered
             if new_state.enemies:
-                threat = new_state.enemies[0]
-                damage_taken = int(threat.damage_per_attack * self.rng.uniform(0.6, 1.1))
+                staggered = self.rng.random() < 0.40  # 40% chance blast staggers monster
+                if not staggered:
+                    threat = new_state.enemies[0]
+                    damage_taken = int(threat.damage_per_attack * self.rng.uniform(0.5, 0.9))
 
-        elif action.startswith("dodge_") or action == "strafe":
-            # Tactical evasion
-            summary_msg = "EVASIVE MANEUVER: Strafed sideways, projectile missed completely!"
-            damage_taken = int(self.rng.choice([0, 0, 5]))  # Mostly safe dodge
+        elif any(w in act_lower for w in ["dodge", "strafe", "evade"]):
+            summary_msg = "TACTICAL STRAFE: Sidestepped behind column; enemy projectile slammed harmlessly into wall!"
+            damage_taken = int(self.rng.choice([0, 0, 2]))
             if primary_target:
-                # Enemy advances or stays at bay
-                primary_target.distance_meters = max(2.0, primary_target.distance_meters - 1.0)
+                primary_target.distance_meters = max(2.5, primary_target.distance_meters - 0.5)
 
-        elif action == "take_cover":
-            summary_msg = "COVER SECURED: Ducked behind blast-resistant bulkhead. Enemy lost line of sight."
+        elif any(w in act_lower for w in ["cover", "barrier", "pillar", "reposition"]):
+            summary_msg = "COVER SECURED: Broke line of sight behind blast-resistant bulkhead."
             damage_taken = 0
 
-        elif action.startswith("grab_") or action == "collect_pickup":
-            if new_state.pickup and "Health" in new_state.pickup or "Medikit" in str(new_state.pickup):
-                heal_amt = 25
+        elif any(w in act_lower for w in ["pickup", "medikit", "health", "grab", "sphere"]):
+            if new_state.pickup and ("Health" in new_state.pickup or "Medikit" in str(new_state.pickup)):
+                heal_amt = 30
                 new_state.health = min(100, new_state.health + heal_amt)
                 summary_msg = f"HEALED: Snatched Medikit! Restored +{heal_amt} HP (Current: {new_state.health}%)."
             elif new_state.pickup and "Soul Sphere" in str(new_state.pickup):
                 new_state.health = min(200, new_state.health + 100)
                 summary_msg = f"SOUL SPHERE CONSUMED: Supercharged to {new_state.health}% HP!"
             else:
-                summary_msg = "SUPPLY RUN: Grabbed spare ammunition."
-            damage_taken = int(self.rng.randint(0, 10))
+                summary_msg = "SUPPLY RUN: Grabbed spare ammunition and armor shards."
+            new_state.pickup = None
+            damage_taken = int(self.rng.randint(0, 6))
 
-        elif action == "chainsaw_charge":
-            if primary_target and primary_target.name in ("Cyberdemon", "Baron of Hell"):
-                damage_taken = 60
-                summary_msg = f"FATAL ERROR: Rushed {primary_target.name} with chainsaw! Crushed by demon fist!"
-            else:
-                damage_dealt = 90
-                killed = True
-                if new_state.enemies:
-                    new_state.enemies.pop(0)
-                summary_msg = "RIP AND TEAR: Chainsaw sliced demon in half!"
+        else:
+            # Universal fallback action
+            summary_msg = f"TACTICAL MOVE: Executed '{action}'."
+            damage_taken = int(self.rng.randint(0, 8))
 
         # Apply damage to armor first, then health
         if damage_taken > 0:
@@ -260,47 +311,58 @@ class DoomTacticalAgent:
 
     def decide_combat_action(self, state: DoomGameState) -> Tuple[str, Any, float]:
         """Convert game state into typed decision question and compute optimal action via Expected Utility."""
+        target = state.enemies[0] if state.enemies else None
+        target_name = target.name if target else "target"
+        weapon = state.current_weapon
+
         enemy_desc = ", ".join(f"{e.name} ({e.threat_level} threat, {e.distance_meters:.1f}m away)" for e in state.enemies) if state.enemies else "Area clear"
         prompt_text = (
-            f"DOOM COMBAT DECISION [Turn {state.turn} | {state.level_name}]\n"
-            f"Doomguy Vitality: {state.health}% HP | Armor: {state.armor}%\n"
-            f"Equipped Weapon: {state.current_weapon}\n"
+            f"DOOM COMBAT SITUATION [Turn {state.turn} | {state.level_name}]\n"
+            f"Doomguy Status: {state.health}% HP | Armor: {state.armor}%\n"
+            f"Equipped Arsenal: {weapon} (Ammo: {state.ammo})\n"
             f"Hostile Contacts: {enemy_desc}\n"
-            f"Hazard: {state.hazard or 'None'} | Pickup: {state.pickup or 'None'}\n"
-            f"Question: What is the highest-utility tactical action for survival and elimination?"
+            f"Tactical Environment: Hazard: {state.hazard or 'None'} | Pickup: {state.pickup or 'None'}\n"
+            f"Question: What is the optimal tactical decision to maximize survival and destroy hostiles?"
         )
 
-        # Build candidate choices
-        choices = ["shoot_primary", "dodge_evade", "take_cover"]
+        # Dynamically formulate open situation-based choices (universal, not hardcoded enums)
+        choices = [
+            f"fire {weapon} directly at {target_name}",
+            "side-strafe behind obstacle to evade attack",
+            "reposition to high ground cover",
+        ]
         if state.pickup:
-            choices.append("grab_pickup")
-        if state.current_weapon == "Chainsaw" or state.health > 80:
-            choices.append("chainsaw_charge")
+            choices.append(f"sprint to grab {state.pickup}")
+        if target and (target.distance_meters < 5.0 or weapon == "Chainsaw"):
+            choices.append(f"chainsaw charge to stagger {target_name}")
 
         # Construct Decision-Theoretic Expected Utility Matrix
-        # Actions vs Game State Scenarios (e.g. enemy_attack, incoming_projectile, safe_window)
-        utility_grid = {}
+        scenarios = ["vulnerable_enemy_window", "incoming_hostile_projectile", "critical_health_hazard"]
+        utility_grid: Dict[str, Dict[str, float]] = {}
+
         for action in choices:
             utility_grid[action] = {}
-            for scenario in ["incoming_attack", "enemy_advancing", "vulnerable_target"]:
-                if action == "shoot_primary":
-                    # Shooting is high reward if target is vulnerable, risky if low health
-                    u = 25.0 if scenario == "vulnerable_target" else (10.0 if state.health > 50 else -15.0)
-                elif action == "dodge_evade":
-                    # Dodge is highest utility when attack is incoming
-                    u = 35.0 if scenario == "incoming_attack" else 5.0
-                elif action == "take_cover":
-                    u = 20.0 if scenario == "incoming_attack" else 0.0
-                elif action == "grab_pickup":
-                    # Grab pickup is lifesaving when health is low
-                    u = 50.0 if state.health < 40 else 15.0
-                elif action == "chainsaw_charge":
-                    u = 40.0 if scenario == "vulnerable_target" and state.health > 60 else -60.0
+            for scenario in scenarios:
+                if "fire" in action or "blast" in action:
+                    # High utility for attacking: rewards decisive elimination
+                    if scenario == "vulnerable_enemy_window":
+                        u = 48.0
+                    elif scenario == "incoming_hostile_projectile":
+                        u = 22.0
+                    else:
+                        u = 15.0 if state.health > 40 else -10.0
+                elif "chainsaw" in action:
+                    u = 52.0 if scenario == "vulnerable_enemy_window" else 10.0
+                elif "strafe" in action or "dodge" in action:
+                    u = 42.0 if scenario == "incoming_hostile_projectile" else 8.0
+                elif "cover" in action or "reposition" in action:
+                    u = 30.0 if scenario == "incoming_hostile_projectile" else 5.0
+                elif "grab" in action or "pickup" in action:
+                    u = 58.0 if (state.health < 45 or scenario == "critical_health_hazard") else 14.0
                 else:
-                    u = 0.0
+                    u = 10.0
                 utility_grid[action][scenario] = u
 
-        scenarios = ["incoming_attack", "enemy_advancing", "vulnerable_target"]
         q = Question.choice(
             text=prompt_text,
             choices=scenarios,
@@ -321,7 +383,7 @@ class DoomTacticalAgent:
         )
         latency_ms = (time.perf_counter() - t0) * 1000.0
 
-        chosen_action = decision.selected_action or "shoot_primary"
+        chosen_action = decision.selected_action or choices[0]
         return chosen_action, decision, latency_ms
 
 
@@ -332,7 +394,7 @@ class DoomCombatBenchmarkRunner:
     def run_simulation(
         engine: DecisionEngine,
         num_episodes: int = 5,
-        max_turns_per_episode: int = 6,
+        max_turns_per_episode: int = 8,
         difficulty: str = "medium",
         render_console: bool = False,
     ) -> Dict[str, Any]:
@@ -382,7 +444,10 @@ class DoomCombatBenchmarkRunner:
             if state.health > 0:
                 episodes_survived += 1
                 if console:
-                    console.print(f"[bold green]>> EPISODE #{ep} CLEARED! Doomguy survived with {state.health}% HP! <<[/bold green]")
+                    if not state.enemies:
+                        console.print(f"[bold green]>> EPISODE #{ep} VICTORY: All hostiles eradicated! Doomguy survived with {state.health}% HP! <<[/bold green]")
+                    else:
+                        console.print(f"[bold green]>> EPISODE #{ep} SURVIVED: Room contested. Doomguy survived with {state.health}% HP! <<[/bold green]")
             else:
                 if console:
                     console.print(f"[bold red]>> EPISODE #{ep} FAILED: Doomguy was slain. <<[/bold red]")

@@ -152,6 +152,7 @@ __all__ = [
     "TerminalUI",
     "UtilityMatrix",
     "VectorScaling",
+    "choose",
     "compute_adaptive_ece",
     "compute_brier_score",
     "compute_ece",
@@ -160,4 +161,25 @@ __all__ = [
     "run_tui",
     "save_calibration_artifact",
 ]
+
+_GLOBAL_ENGINE = None
+
+
+def choose(
+    prompt: str,
+    choices: Sequence[str],
+    model: str = "mock",
+    level: str = "L0",
+    **kwargs: Any,
+) -> Decision:
+    """Universal top-level decision function (analogous to von.choose).
+
+    Evaluates any arbitrary prompt and candidate options directly from model distributions,
+    returning a strongly typed, calibrated Decision object.
+    """
+    global _GLOBAL_ENGINE
+    if _GLOBAL_ENGINE is None or _GLOBAL_ENGINE.metadata.model_name != model:
+        _GLOBAL_ENGINE = DecisionEngine(model=model)
+    return _GLOBAL_ENGINE.choose(prompt, choices, level=level, **kwargs)
+
 

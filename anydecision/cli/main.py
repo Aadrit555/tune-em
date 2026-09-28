@@ -198,3 +198,12 @@ def doom(
     console.print(f"Mean Decision Latency: {stats['mean_latency_ms']:.2f} ms")
     console.print(f"Throughput:            {stats['decisions_per_second']:.1f} decisions / sec")
 
+
+@app.command()
+def compare_von(
+    model: str = typer.Option("mock", "--model", "-m", help="Decision model backend"),
+) -> None:
+    """Run comprehensive head-to-head empirical benchmark: anydecision vs von."""
+    from anydecision.evaluation.von_comparison import VonHeadToHeadBenchmark
+    VonHeadToHeadBenchmark.run_benchmark(model=model, render_console=True)
+

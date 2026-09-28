@@ -114,3 +114,4 @@ def test_custom_doom_encounter_simulation():
         # Super Shotgun deals > 100 damage, so Vanguard Imp (45 HP) should be obliterated!
         assert outcome.enemy_killed is True
         assert len(next_state.enemies) == 1
+

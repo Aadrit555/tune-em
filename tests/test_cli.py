@@ -34,3 +34,22 @@ def test_cli_benchmark():
     assert res.exit_code == 0
     assert "Benchmark Results" in res.output
 
+
+def test_cli_doom():
+    res = runner.invoke(app, [
+        "doom",
+        "--episodes", "1",
+        "--model", "mock",
+    ])
+    assert res.exit_code == 0
+    assert "DOOM COMBAT BENCHMARK RESULTS" in res.output
+
+
+def test_cli_compare_von():
+    res = runner.invoke(app, [
+        "compare-von",
+        "--model", "mock",
+    ])
+    assert res.exit_code == 0
+    assert "HEAD-TO-HEAD BENCHMARK" in res.output
+
