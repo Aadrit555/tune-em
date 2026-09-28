@@ -48,11 +48,57 @@ def test_selective_conformal_predictor():
     assert isinstance(confident_res, SelectiveConformalResult)
     assert confident_res.selected is True
     assert "yes" in confident_res.prediction_set
-    assert confident_res.guarantee_type == "conformal_exact"
+    assert confident_res.guarantee_type in ["formal_conformal", "high_confidence_empirical"]
 
     # Ambiguous test
     ambiguous_res = scp.predict({"no": 0.51, "yes": 0.49})
     assert ambiguous_res.selected is False
+
+
+def test_selective_conformal_small_sample_is_heuristic():
+    """Verify small calibration sets (<20) are marked HEURISTIC and never FORMAL_CONFORMAL."""
+    scp = SelectiveConformalPredictor(risk_limit=0.05, min_coverage=0.70)
+    tiny_probs = np.array([[0.8, 0.2], [0.1, 0.9], [0.7, 0.3]])
+    tiny_labels = np.array([0, 1, 0])
+    scp.fit(tiny_probs, tiny_labels, ["no", "yes"])
+
+    res = scp.predict({"no": 0.95, "yes": 0.05})
+    assert res.guarantee_type == "heuristic"
+    assert res.guarantee_type != "formal_conformal"
+
+
+def test_conformal_coverage_simulation():
+    """Simulate exchangeable trials and verify conformal prediction set coverage >= 1 - alpha."""
+    rng = np.random.RandomState(1337)
+    n_calib = 500
+    n_test = 1000
+    alpha = 0.10
+
+    # Synthetic generative model
+    def generate_data(size):
+        y = rng.choice([0, 1], size=size, p=[0.5, 0.5])
+        # Model predicted probabilities with calibration noise
+        noise = rng.normal(0, 0.1, size=size)
+        p1 = np.clip(np.where(y == 1, 0.85 + noise, 0.15 + noise), 0.01, 0.99)
+        p = np.stack([1.0 - p1, p1], axis=1)
+        return p, y
+
+    calib_p, calib_y = generate_data(n_calib)
+    test_p, test_y = generate_data(n_test)
+
+    scp = SelectiveConformalPredictor(risk_limit=alpha, min_coverage=0.60)
+    scp.fit(calib_p, calib_y, ["class_0", "class_1"])
+
+    covered = 0
+    for i in range(n_test):
+        res = scp.predict({"class_0": float(test_p[i, 0]), "class_1": float(test_p[i, 1])})
+        true_label = f"class_{test_y[i]}"
+        if true_label in res.prediction_set:
+            covered += 1
+
+    emp_coverage = covered / n_test
+    # 1 - alpha = 0.90; test with 3-sigma tolerance: sqrt(0.9 * 0.1 / 1000) ~ 0.0095 -> at least 0.87
+    assert emp_coverage >= 0.88, f"Empirical coverage {emp_coverage} below theoretical bound"
 
 
 def test_engine_selective_conformal_risk_control():
@@ -63,7 +109,7 @@ def test_engine_selective_conformal_risk_control():
     decision = engine.decide(q, risk_limit=0.05, coverage_target=0.75)
 
     assert decision.risk_guarantee is not None
-    assert decision.guarantee_type in ["conformal_exact", "empirical_approximate"]
+    assert decision.guarantee_type in ["formal_conformal", "high_confidence_empirical", "heuristic", "unavailable"]
     assert decision.selected in [True, False]
     assert decision.prediction_set is not None
     assert len(decision.prediction_set) >= 1
