@@ -418,6 +418,12 @@ skill. Real-model policy comparison is future work.
 | scripted | 0 | 3 | 3 | 17 | ~0.00 |
 | scripted | 1 | 3 | 3 | 16 | ~0.00 |
 | scripted | 2 | 3 | 3 | 8 | ~0.00 |
+| learned (vision MLP) | 0 | 3 | 3 | 17 | 0.15 |
+
+The `learned` row is a trained state-estimator MLP (vision-only features,
+cloned from scripted demonstrations, held-out dev 1.000) running vision-only
+control (`--policy learned --observation-mode VISION`). Clone parity with the
+demonstrator, not superhumanity — see `docs/CLAIMS.md` §14b.
 
 
 ---

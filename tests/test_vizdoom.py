@@ -163,6 +163,40 @@ def test_kills_come_from_game_variables_and_report_is_factual(check_vizdoom):
         assert hype not in blob
 
 
+def test_learned_policy_executes_trained_estimator(check_vizdoom):
+    """Learned policy loads the committed estimator and acts vision-only."""
+    import os as _os
+    from anydecision.games.doom_estimator import DoomEstimator
+
+    est_path = _os.path.join("artifacts", "doom_estimator_vision.npz")
+    assert _os.path.exists(est_path), "bundled estimator artifact must be committed"
+    est = DoomEstimator(est_path)
+    assert set(est.classes) <= {
+        "PRECISION_ATTACK", "KITE_AND_FIRE", "CIRCLE_STRAFE_LEFT",
+        "CIRCLE_STRAFE_RIGHT", "DODGE_STRAFE_LEFT", "DODGE_STRAFE_RIGHT",
+        "TACTICAL_RETREAT", "TACTICAL_ADVANCE", "ASSAULT_ADVANCE",
+        "SNAP_TURN_LEFT", "SNAP_TURN_RIGHT",
+    }
+    engine = DecisionEngine(model="mock")
+    report = ViZDoomDecisionRunner.run_simulation(
+        engine=engine, scenario="basic", num_episodes=1,
+        render_console=False, policy="learned", seed=11,
+        observation_mode="VISION",
+    )
+    assert report.policy == "learned"
+    assert report.observation_mode == "VISION"
+    assert report.total_decisions > 0
+    assert sum(report.action_distribution.values()) == report.total_decisions
+    # Clone parity with the scripted demonstrator on basic.
+    ref = ViZDoomDecisionRunner.run_simulation(
+        engine=engine, scenario="basic", num_episodes=1,
+        render_console=False, policy="scripted", seed=11,
+        observation_mode="VISION",
+    )
+    assert report.action_distribution == ref.action_distribution
+    assert report.total_kills == ref.total_kills
+
+
 def test_baseline_policies_run_same_action_space(check_vizdoom):
     engine = DecisionEngine(model="mock")
     reports = {}

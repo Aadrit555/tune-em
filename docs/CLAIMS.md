@@ -230,6 +230,27 @@ demonstrate machinery (plumbing, shapes, invariants), never model capability.
 - **Reproduce:**
   `anydecision real-doom --map E1M1 --wad /path/to/DOOM.WAD --episodes 2 --seed 0 --output out.json`
 
+## 14b. Learned state estimator (TRAINED, vision-only clone parity)
+
+- **Claim:** A compact MLP (32→16, 6 vision-only features) trained on 936
+  real scripted-demonstrator steps (basic + defend_the_center, kill-weighted +
+  class-balanced, split by run) reproduces the demonstrator: train 1.000,
+  held-out-run dev 1.000 (n=107). Closed-loop on fresh seeds it matches the
+  scripted policy exactly (basic: 2/2 kills, identical action distribution;
+  defend: identical 474-decision runs) while using VISION observations only.
+- **Implementation:** `anydecision/games/doom_estimator.py`,
+  `PolicyKind.LEARNED` in `vizdoom_env.py`; artifact
+  `artifacts/doom_estimator_vision.{npz,json}` (weights + provenance).
+- **Evidence:** `tests/test_vizdoom.py`
+  (`test_learned_policy_executes_trained_estimator`: clone parity + kill parity);
+  `benchmarks/results/vizdoom_basic_learned_seed0.json` (3/3 won, 3 kills).
+- **Limitations:** Clone parity, not superhumanity: it cannot exceed the
+  scripted demonstrator by construction (4-action repertoire). Retrain via
+  trajectory logging (`record_trajectory=True`) + `train_estimator` for new
+  scenarios; report holds only for the logged regime.
+- **Reproduce:**
+  `anydecision vizdoom --scenario basic --episodes 3 --seed 0 --policy learned --observation-mode VISION --output out.json`
+
 ## 15. Synthetic toy combat (SYNTHETIC, labeled)
 
 - **Claim:** `anydecision/games/doom.py` and `anydecision doom` are a SEEDED

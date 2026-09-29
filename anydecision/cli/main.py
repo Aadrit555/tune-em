@@ -328,9 +328,10 @@ def vizdoom_cmd(
     model: str = typer.Option("mock", "--model", help="Decision model backend"),
     render: bool = typer.Option(False, "--render", help="Render graphical game window"),
     seed: Optional[int] = typer.Option(None, "--seed", help="Deterministic seed (recorded in artifact)"),
-    policy: str = typer.Option("anydecision", "--policy", help="Policy: anydecision, random, scripted"),
+    policy: str = typer.Option("anydecision", "--policy", help="Policy: anydecision, random, scripted, learned"),
     observation_mode: str = typer.Option("HYBRID", "--observation-mode", help="Observation mode: STATE, VISION, HYBRID"),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Machine-readable JSON artifact path"),
+    estimator: Optional[str] = typer.Option(None, "--estimator", help="State-estimator .npz (learned policy; default: bundled artifact)"),
 ) -> None:
     """Run a typed decision policy inside the live ViZDoom engine (ViZDoom integration)."""
     from anydecision.games.vizdoom_env import ViZDoomDecisionRunner
@@ -348,6 +349,7 @@ def vizdoom_cmd(
         policy=policy,
         observation_mode=observation_mode,
         output_path=output,
+        estimator_path=estimator,
     )
 
 

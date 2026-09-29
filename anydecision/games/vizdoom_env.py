@@ -78,6 +78,7 @@ class PolicyKind(str, Enum):
     ANYDECISION = "anydecision"
     RANDOM = "random"
     SCRIPTED = "scripted"
+    LEARNED = "learned"  # trained state-estimator MLP (see doom_estimator.py)
 
 
 # Scenario-defined victory predicates (explicit per scenario; no universal
@@ -163,6 +164,10 @@ class ViZDoomScoreReport(BaseModel):
     commit: Optional[str] = None
     timestamp: str = ""
     telemetry_log: List[str] = Field(default_factory=list)
+    trajectory: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Per-step sensor/action/reward records (only when record_trajectory=True).",
+    )
 
     def to_dict(self) -> Dict[str, Any]:
         """Machine-readable benchmark artifact dict."""
@@ -284,6 +289,32 @@ _IGNORED_LABELS = {
 }
 
 
+# Fixed sensor feature order for learned estimators (behavior cloning value).
+# All values are numeric and game-engine grounded; VISION-safe subset excludes
+# radar geometry (nearest_dist/nearest_rel_deg/radar_hostiles are None there).
+FEATURE_ORDER = [
+    "health", "armor", "ammo",
+    "visible_hostiles", "crosshair_locked", "target_offset_x",
+    "radar_hostiles", "nearest_dist", "nearest_rel_deg",
+]
+
+
+def features_from_detail(detail: Dict[str, Any]) -> List[float]:
+    """Numeric feature vector in FEATURE_ORDER (booleans -> 0.0/1.0, None -> sentinel)."""
+    vals: List[float] = []
+    for key in FEATURE_ORDER:
+        v = detail.get(key)
+        if v is None:
+            vals.append(-1.0)
+        elif isinstance(v, bool):
+            vals.append(1.0 if v else 0.0)
+        else:
+            vals.append(float(v))
+    # Normalize roughly to unit-ish ranges for stable MLP training.
+    scales = [100.0, 100.0, 50.0, 4.0, 1.0, 160.0, 4.0, 1000.0, 180.0]
+    return [v / s for v, s in zip(vals, scales)]
+
+
 def extract_observation(
     game: Any,
     state: Any,
@@ -348,6 +379,9 @@ def extract_observation(
                         hostiles.append({"name": o.name, "dist": dist, "rel_deg": rel_deg})
         hostiles.sort(key=lambda h: h["dist"])
         detail["radar_hostiles"] = len(hostiles)
+        detail["nearest_dist"] = None
+        detail["nearest_rel_deg"] = None
+        detail["nearest_name"] = None
         if hostiles:
             nearest = hostiles[0]
             detail.update(
@@ -416,6 +450,8 @@ class ViZDoomDecisionRunner:
         min_confidence: Optional[float] = None,
         output_path: Optional[str] = None,
         utility_matrix: Optional[UtilityMatrix] = None,
+        record_trajectory: bool = False,
+        estimator_path: Optional[str] = None,
     ) -> ViZDoomScoreReport:
         if not VIZDOOM_AVAILABLE:
             raise ImportError(
@@ -425,6 +461,12 @@ class ViZDoomDecisionRunner:
         policy_kind = PolicyKind(str(policy).lower())
         if engine is None and policy_kind == PolicyKind.ANYDECISION:
             engine = DecisionEngine(model="mock")
+        estimator = None
+        if policy_kind == PolicyKind.LEARNED:
+            from anydecision.games.doom_estimator import DoomEstimator
+
+            default_est = Path(__file__).resolve().parents[2] / "artifacts" / "doom_estimator_vision.npz"
+            estimator = DoomEstimator(estimator_path or str(default_est))
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed % (2**32 - 1))
@@ -554,6 +596,7 @@ class ViZDoomDecisionRunner:
         total_tokens = 0
         total_expected_utility = 0.0
         tokens_estimated_any = False
+        trajectory_records: List[Dict[str, Any]] = []
         final_healths: List[float] = []
         final_armors: List[float] = []
         telemetry_logs: List[str] = []
@@ -602,6 +645,18 @@ class ViZDoomDecisionRunner:
                     abstained = False
                     backend_calls = 0
                     lat_ms = (time.perf_counter() - t0) * 1000.0
+                elif policy_kind == PolicyKind.LEARNED:
+                    assert estimator is not None
+                    est_probs = estimator.predict_proba(features_from_detail(detail))
+                    chosen_act = max(est_probs, key=est_probs.get)  # type: ignore[arg-type]
+                    if chosen_act not in action_map:
+                        raise AssertionError(
+                            f"Estimator predicted {chosen_act!r} outside the action space."
+                        )
+                    probs_repr = f"maxP={max(est_probs.values()):.2f}"
+                    abstained = False
+                    backend_calls = 0
+                    lat_ms = (time.perf_counter() - t0) * 1000.0
                 else:
                     assert engine is not None
                     q = Question.choice(prompt, choices=list(matrix.states))
@@ -644,6 +699,18 @@ class ViZDoomDecisionRunner:
                 action_vector = action_map.get(chosen_act, [0] * len(buttons))
                 step_reward = game.make_action(action_vector, frame_skip)
                 ep_reward += step_reward
+                ep_kills_now = int(_safe_game_var(game, vzd.GameVariable.KILLCOUNT, 0.0))
+
+                if record_trajectory:
+                    trajectory_records.append({
+                        "episode": ep, "step": ep_step,
+                        "scenario": scenario, "policy": policy_kind.value,
+                        "observation_mode": mode.value, "seed": seed,
+                        "features": features_from_detail(detail),
+                        "action": chosen_act,
+                        "step_reward": float(step_reward),
+                        "kills_total": int(ep_kills_now - ep_kills_start),
+                    })
 
                 if window_visible:
                     time.sleep(0.028)
@@ -736,6 +803,7 @@ class ViZDoomDecisionRunner:
             commit=_git_commit(),
             timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             telemetry_log=telemetry_logs,
+            trajectory=trajectory_records,
         )
 
         if output_path:

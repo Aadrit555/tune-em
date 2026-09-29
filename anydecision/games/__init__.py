@@ -23,9 +23,17 @@ from anydecision.games.ultimate_doom import (
     UltimateDoomWadParser,
 )
 
+from anydecision.games.doom_estimator import (
+    DoomEstimator,
+    label_trajectories,
+    save_estimator,
+    train_estimator,
+)
 from anydecision.games.vizdoom_env import (
+    FEATURE_ORDER,
     ViZDoomDecisionRunner,
     ViZDoomScoreReport,
+    features_from_detail,
     is_vizdoom_available,
 )
 
@@ -33,9 +41,11 @@ __all__ = [
     "DoomActionOutcome",
     "DoomCombatBenchmarkRunner",
     "DoomEnemy",
+    "DoomEstimator",
     "DoomGameState",
     "DoomScenarioEnvironment",
     "DoomTacticalAgent",
+    "FEATURE_ORDER",
     "RealDoomEvaluator",
     "RealDoomMap",
     "RealDoomScoreReport",
@@ -43,7 +53,11 @@ __all__ = [
     "UltimateDoomWadParser",
     "ViZDoomDecisionRunner",
     "ViZDoomScoreReport",
+    "features_from_detail",
     "is_vizdoom_available",
+    "label_trajectories",
+    "save_estimator",
+    "train_estimator",
 ]
 
 
