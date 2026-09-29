@@ -261,6 +261,24 @@ demonstrate machinery (plumbing, shapes, invariants), never model capability.
 - **Reproduce:**
   `anydecision vizdoom --scenario basic --episodes 3 --seed 0 --policy learned --observation-mode VISION --output out.json`
 
+## 14c. 300-round arena (genuine level design, genuine pickup)
+
+- **Claim:** `arena300` (`anydecision/games/data/arena300.wad`, built by the
+  committed `benchmarks/build_arena300.py` from ViZDoom's basic.wad geometry)
+  stocks 6 ClipBoxes = 300 rounds plus 3 Zombiemen on MAP01. Collection is
+  genuine engine pickup (walk-over contact; verified 50→150 ammo on a
+  coverage walk). Console ammo cheats were tested and are engine-blocked, so
+  no rounds are conjured — the stockpile is level design, disclosed as such.
+  Note: this engine build's ITEMCOUNT does not count ClipBox pickups, so ammo
+  economy is read from ammo deltas (`mean_max_ammo`), not ITEMCOUNT.
+- **Evidence:** `tests/test_vizdoom.py` (WAD structure census + live load
+  with ClipBox/Zombieman objects present + learned play reporting
+  `mean_max_ammo`).
+- **Limitations:** The policy does not yet seek pickups; collection is
+  opportunistic during combat movement.
+- **Reproduce:** `python benchmarks/build_arena300.py` then
+  `anydecision vizdoom --scenario arena300 --episodes 1 --policy learned --observation-mode VISION --render --hold-open`
+
 ## 15. Synthetic toy combat (SYNTHETIC, labeled)
 
 - **Claim:** `anydecision/games/doom.py` and `anydecision doom` are a SEEDED

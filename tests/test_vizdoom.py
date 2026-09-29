@@ -198,6 +198,69 @@ def test_learned_policy_executes_trained_estimator(check_vizdoom):
     assert report.total_kills == ref.total_kills
 
 
+def test_arena300_wad_structure():
+    """Arena WAD is generated, parses, and stocks exactly 300 rounds + sparring targets."""
+    import struct
+    from pathlib import Path
+
+    wad = Path("anydecision/games/data/arena300.wad")
+    assert wad.exists(), "arena300.wad must be committed (built by benchmarks/build_arena300.py)"
+    raw = wad.read_bytes()
+    magic, n, off = struct.unpack("<4sII", raw[:12])
+    assert magic == b"PWAD"
+    names = []
+    for i in range(n):
+        pos, size, nm = struct.unpack("<II8s", raw[off + i * 16:off + (i + 1) * 16])
+        names.append(nm.rstrip(b"\x00").decode("latin-1"))
+    assert names[0] == "MAP01" and "TEXTMAP" in names
+    import re
+
+    pos, size = next(
+        (p, s) for i, (p, s, nm) in enumerate(
+            [struct.unpack("<II8s", raw[off + i * 16:off + (i + 1) * 16]) for i in range(n)]
+        ) if nm.rstrip(b"\x00") == b"TEXTMAP"
+    )
+    txt = raw[pos:pos + size].decode("utf-8")
+    types = [m.group(1) for m in re.finditer(r"type\s*=\s*(\d+);", txt)
+             if "thing" in txt[max(0, m.start() - 200):m.start()]]
+    assert types.count("2048") == 6, "six ClipBoxes = 300 rounds"
+    assert types.count("3004") == 3, "three Zombiemen sparring targets"
+    assert types.count("1") == 1, "single player start"
+
+
+def test_arena300_loads_and_plays(check_vizdoom):
+    """Arena scenario loads in-engine with stocked actors and plays a live episode."""
+    import vizdoom as vzd
+
+    game = vzd.DoomGame()
+    game.load_config(os.path.join(vzd.scenarios_path, "basic.cfg"))
+    game.set_doom_scenario_path(os.path.abspath("anydecision/games/data/arena300.wad"))
+    game.set_doom_map("MAP01")
+    game.set_window_visible(False)
+    game.set_labels_buffer_enabled(True)
+    game.set_objects_info_enabled(True)
+    game.init()
+    try:
+        game.new_episode()
+        game.make_action([0] * len(game.get_available_buttons()), 4)
+        state = game.get_state()
+        assert state is not None
+        names = {o.name for o in (state.objects or [])}
+        assert "ClipBox" in names and "Zombieman" in names
+    finally:
+        game.close()
+
+    engine = DecisionEngine(model="mock")
+    report = ViZDoomDecisionRunner.run_simulation(
+        engine=engine, scenario="arena300", num_episodes=1,
+        render_console=False, policy="learned", seed=0,
+        observation_mode="VISION", max_steps_per_episode=60,
+    )
+    assert report.scenario == "arena300"
+    assert report.total_decisions > 0
+    assert report.mean_max_ammo >= 50.0
+
+
 def test_baseline_policies_run_same_action_space(check_vizdoom):
     engine = DecisionEngine(model="mock")
     reports = {}
