@@ -225,7 +225,9 @@ def test_arena300_wad_structure():
     types = [m.group(1) for m in re.finditer(r"type\s*=\s*(\d+);", txt)
              if "thing" in txt[max(0, m.start() - 200):m.start()]]
     assert types.count("2048") == 6, "six ClipBoxes = 300 rounds"
-    assert types.count("3004") == 3, "three Zombiemen sparring targets"
+    assert types.count("3004") == 3, "three Zombiemen"
+    assert types.count("9") == 2, "two ShotgunGuys"
+    assert types.count("3001") == 2, "two Imps"
     assert types.count("1") == 1, "single player start"
 
 

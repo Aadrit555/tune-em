@@ -314,7 +314,8 @@ def build_tactical_utility_matrix(
 # this allowlist: anything else (ammo, weapons, decorations, corpses, puffs)
 # is NEVER aimed at. Unknown labels are reported, not targeted.
 HOSTILE_BESTIARY = frozenset({
-    "Zombieman", "ShotgunGuy", "HeavyWeaponDude", "Imp", "Demon", "Spectre",
+    "Zombieman", "ShotgunGuy", "HeavyWeaponDude", "Chaingunner",
+    "Imp", "DoomImp", "Demon", "Spectre",
     "LostSoul", "Cacodemon", "HellKnight", "BaronOfHell", "Arachnotron",
     "PainElemental", "Revenant", "Mancubus", "Archvile", "SpiderMastermind",
     "Cyberdemon", "WolfensteinSS", "CommanderKeen",

@@ -3,7 +3,7 @@
 Reproducible UDMF edit of ViZDoom's bundled basic.wad (PWAD, MAP01):
   - 6x ClipBox (DoomEd 2048, 50 bullets each = 300 rounds) ringed around the
     player start for genuine engine pickup (ITEMCOUNT-verified, never conjured).
-  - 3x Zombieman (DoomEd 3004) at fixed bearings for extra live targets.
+  - 7 live targets (3x Zombieman, 2x ShotgunGuy, 2x Imp) at fixed bearings.
 Only geometry is reused from basic.wad. The ACS BEHAVIOR lump is deliberately
 DROPPED: its Exit_Normal-on-kill script would end the episode the moment the
 first target dies, before the Zombiemen and the stockpile come into play.
@@ -25,7 +25,16 @@ import vizdoom as vzd
 
 PLAYER_START = (-384.0, 32.0)
 CLIPBOX = 2048  # Box of bullets, 50 rounds
-ZOMBIEMAN = 3004  # 20 HP skirmisher
+# Mixed sparring roster (DoomEd, HP): fast kills up close, tougher ones out.
+ROSTER: list[tuple[int, float, float]] = [
+    (3004, 170.0, 20.0),  # Zombieman x3, inner ring
+    (3004, 170.0, 140.0),
+    (3004, 170.0, 260.0),
+    (9, 300.0, 80.0),  # ShotgunGuy x2, outer ring
+    (9, 300.0, 200.0),
+    (3001, 300.0, 320.0),  # Imp x2, outer ring
+    (3001, 190.0, 10.0),
+]
 # Full spawn-flag set mirrored from the player start: all skills, all game
 # modes (single/dm/coop), all player classes. Absent mode flags keep things
 # from spawning, which is why the first arena revision loaded with zero items.
@@ -69,10 +78,10 @@ def build(base_wad: Path) -> bytes:
     for k in range(4):
         ang = math.radians(90.0 * k + 45.0)
         text += _thing(px + 96.0 * math.cos(ang), py + 96.0 * math.sin(ang), CLIPBOX)
-    # 3 Zombiemen on a 288-unit ring (fixed bearings, deterministic map).
-    for k, deg in enumerate((30.0, 150.0, 270.0)):
+    # Mixed roster on inner/outer rings (fixed bearings, deterministic map).
+    for type_id, radius, deg in ROSTER:
         ang = math.radians(deg)
-        text += _thing(px + 288.0 * math.cos(ang), py + 288.0 * math.sin(ang), ZOMBIEMAN, angle=0)
+        text += _thing(px + radius * math.cos(ang), py + radius * math.sin(ang), type_id, angle=0)
     lumps["TEXTMAP"] = text.encode("utf-8")
 
     # Emit MAP01 + TEXTMAP + ENDMAP only. BEHAVIOR/SCRIPTS/DIALOGUE/ZNODES
@@ -109,7 +118,7 @@ def main() -> None:
     data = build(base)
     out.write_bytes(data)
     n_things = data.count(b"thing\n{")
-    print(f"wrote {out} ({len(data)} bytes, {n_things} things: 1 player + 6 ClipBox + 3 Zombieman)")
+    print(f"wrote {out} ({len(data)} bytes, {n_things} things: 1 player + 6 ClipBox + 7 monsters)")
 
 
 if __name__ == "__main__":
