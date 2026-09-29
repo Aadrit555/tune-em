@@ -36,6 +36,8 @@ def main() -> None:
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--brier-weight", type=float, default=0.5)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--center", action="store_true", default=True)
+    ap.add_argument("--no-center", dest="center", action="store_false")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -47,14 +49,21 @@ def main() -> None:
     head = NonAutoregressiveDecisionHead(hidden_dim=hidden, projection_dim=256)
     opt = torch.optim.AdamW(head.parameters(), lr=args.lr, weight_decay=0.01)
 
-    ctx_tr = torch.from_numpy(tr["context"])
-    opt_tr = torch.from_numpy(tr["options"])
-    mask_tr = torch.from_numpy(tr["mask"])
-    y_tr = torch.from_numpy(tr["label_index"])
-    ctx_dv = torch.from_numpy(dv["context"])
-    opt_dv = torch.from_numpy(dv["options"])
-    mask_dv = torch.from_numpy(dv["mask"])
-    y_dv = torch.from_numpy(dv["label_index"])
+    # Anisotropy control: center by TRAIN means only (no dev/test leakage).
+    ctx_mean = np.zeros(tr["context"].shape[1], dtype=np.float32)
+    opt_mean = np.zeros(tr["options"].shape[2], dtype=np.float32)
+    if args.center:
+        ctx_mean = tr["context"].mean(axis=0).astype(np.float32)
+        opt_mean = tr["options"][tr["mask"] > 0.5].mean(axis=0).astype(np.float32)
+
+    def _prep(npz: dict) -> tuple:
+        ctx = torch.from_numpy(npz["context"].astype(np.float32) - ctx_mean)
+        opts = torch.from_numpy(npz["options"].astype(np.float32) - opt_mean)
+        return (ctx, opts, torch.from_numpy(npz["mask"]),
+                torch.from_numpy(npz["label_index"]))
+
+    ctx_tr, opt_tr, mask_tr, y_tr = _prep(tr)
+    ctx_dv, opt_dv, mask_dv, y_dv = _prep(dv)
 
     def split_metrics(ctx, opts, mask, y):
         head.eval()
@@ -126,7 +135,9 @@ def main() -> None:
     out_h = Path(args.out_head)
     out_h.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"state_dict": best_state, "hidden_dim": hidden,
-                "projection_dim": 256, "backbone": str(tr["backbone"][0])},
+                "projection_dim": 256, "backbone": str(tr["backbone"][0]),
+                "center": bool(args.center),
+                "ctx_mean": ctx_mean, "opt_mean": opt_mean},
                out_h)
     final_dev = split_metrics(ctx_dv, opt_dv, mask_dv, y_dv)
     out_l = Path(args.out_log)

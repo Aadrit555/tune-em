@@ -27,15 +27,22 @@ def read_parquet(repo: str, path: str) -> list[dict]:
 
 
 @torch.no_grad()
-def encode(texts: list[str], tok, model, batch_size: int = 16) -> np.ndarray:
+def encode(texts: list[str], tok, model, batch_size: int = 16, max_length: int = 256,
+           pool: str = "mean") -> np.ndarray:
     vecs = []
     for i in range(0, len(texts), batch_size):
         enc = tok(texts[i:i + batch_size], return_tensors="pt",
-                  padding=True, truncation=True, max_length=256)
+                  padding=True, truncation=True, max_length=max_length)
         out = model(**enc)
-        cls = out.last_hidden_state[:, 0, :].float().cpu().numpy()
-        cls /= (np.linalg.norm(cls, axis=1, keepdims=True) + 1e-12)
-        vecs.append(cls)
+        h = out.last_hidden_state.float()
+        if pool == "mean":
+            mask = enc["attention_mask"].unsqueeze(-1).float()
+            v = (h * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1e-9)
+        else:
+            v = h[:, 0, :]
+        v = v.cpu().numpy()
+        v /= (np.linalg.norm(v, axis=1, keepdims=True) + 1e-12)
+        vecs.append(v)
         if (i // batch_size) % 20 == 0:
             print(f"  encoded {i}/{len(texts)}", flush=True)
     return np.concatenate(vecs, axis=0)
@@ -48,6 +55,9 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--backbone", default="answerdotai/ModernBERT-large")
     ap.add_argument("--max-arc", type=int, default=3000)
+    ap.add_argument("--heldout", type=int, default=500)
+    ap.add_argument("--out-dev", required=True)
+    ap.add_argument("--pool", default="mean", choices=["mean", "cls"])
     args = ap.parse_args()
 
     from transformers import AutoModel, AutoTokenizer
@@ -116,9 +126,17 @@ def main() -> None:
     tok = AutoTokenizer.from_pretrained(args.backbone)
     model = AutoModel.from_pretrained(args.backbone, dtype="float32")
     model.eval()
-    ctx = encode(premises, tok, model)
+    ctx = encode(premises, tok, model, max_length=512, pool=args.pool)
+    # Joint premise+option encoding: each option is read TOGETHER with its
+    # premise in one sequence so cross-attention can model the match
+    # (option-marker style). The pair CLS becomes the option representation.
+    pair_texts = []
+    for premise, opts in zip(premises, opt_lists):
+        for otext in opts:
+            pair_texts.append(f"{premise}\nCandidate: {otext}")
+    flat_enc = encode(pair_texts, tok, model, max_length=512, pool=args.pool)  # flat option order
     flat = [t for sub in opt_lists for t in sub]
-    flat_enc = encode(flat, tok, model)
+    assert len(flat_enc) == len(flat)
     n_opts = [len(o) for o in opt_lists]
     cmax, hidden = max(n_opts), ctx.shape[1]
     opts = np.zeros((len(ids), cmax, hidden), dtype=np.float32)
@@ -129,18 +147,31 @@ def main() -> None:
         mask[i, :n] = 1.0
         pos += n
 
+    ids_a = np.array(ids)
+    tiers_a = np.array(["aux"] * n_arc + ["jb-train"] * n_jb)
+    qtypes_a = np.array(["choice"] * n_arc + ["mixed"] * n_jb)
+    expected_a = np.array([""] * len(ids))
+    label_a = np.array(label_idx, dtype=np.int64)
+    # Stable early-stopping split: last `heldout` ARC items -> aux-dev.
+    # JB-train stays in training; JB-dev/JB-test are never included.
+    dev_sel = np.zeros(len(ids), dtype=bool)
+    dev_sel[n_arc - args.heldout:n_arc] = True
+    tr_sel = ~dev_sel
+
+    def _write(path: Path, sel: np.ndarray) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            path, ids=ids_a[sel], tiers=tiers_a[sel], qtypes=qtypes_a[sel],
+            expected=expected_a[sel], context=ctx[sel], options=opts[sel],
+            mask=mask[sel], label_index=label_a[sel],
+            backbone=np.array([args.backbone]),
+        )
+
     out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        out, ids=np.array(ids),
-        tiers=np.array(["aux"] * n_arc + ["jb-train"] * n_jb),
-        qtypes=np.array(["choice"] * n_arc + ["mixed"] * n_jb),
-        expected=np.array([""] * len(ids)),
-        context=ctx, options=opts, mask=mask,
-        label_index=np.array(label_idx, dtype=np.int64),
-        backbone=np.array([args.backbone]),
-    )
-    print(f"wrote {out}: n={len(ids)}")
+    out_dev = Path(args.out_dev)
+    _write(out, tr_sel)
+    _write(out_dev, dev_sel)
+    print(f"wrote {out}: n={int(tr_sel.sum())}; {out_dev}: n={int(dev_sel.sum())}")
 
 
 if __name__ == "__main__":

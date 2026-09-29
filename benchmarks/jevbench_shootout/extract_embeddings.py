@@ -35,15 +35,22 @@ def option_texts(item: dict, qtype: str, labels: list[str]) -> list[str]:
 
 
 @torch.no_grad()
-def encode(texts: list[str], tok, model, batch_size: int = 8) -> np.ndarray:
+def encode(texts: list[str], tok, model, batch_size: int = 8, max_length: int = 512,
+           pool: str = "mean") -> np.ndarray:
     vecs = []
     for i in range(0, len(texts), batch_size):
         enc = tok(texts[i:i + batch_size], return_tensors="pt",
-                  padding=True, truncation=True, max_length=512)
+                  padding=True, truncation=True, max_length=max_length)
         out = model(**enc)
-        cls = out.last_hidden_state[:, 0, :].float().cpu().numpy()
-        cls /= (np.linalg.norm(cls, axis=1, keepdims=True) + 1e-12)
-        vecs.append(cls)
+        h = out.last_hidden_state.float()
+        if pool == "mean":
+            mask = enc["attention_mask"].unsqueeze(-1).float()
+            v = (h * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1e-9)
+        else:
+            v = h[:, 0, :]
+        v = v.cpu().numpy()
+        v /= (np.linalg.norm(v, axis=1, keepdims=True) + 1e-12)
+        vecs.append(v)
     return np.concatenate(vecs, axis=0)
 
 
@@ -89,8 +96,13 @@ def main() -> None:
         expected.append(exp)
 
     ctx = encode(premises, tok, model)
-    flat_opts = [t for sub in opt_lists for t in sub]
-    flat_enc = encode(flat_opts, tok, model)
+    # Joint premise+option encoding (option-marker style): the pair CLS carries
+    # the match signal; premise CLS stays the context representation.
+    pair_texts = []
+    for premise, opts in zip(premises, opt_lists):
+        for otext in opts:
+            pair_texts.append(f"{premise}\nCandidate: {otext}")
+    flat_enc = encode(pair_texts, tok, model)
     cmax = max(n_opts)
     hidden = ctx.shape[1]
     opts = np.zeros((len(ids), cmax, hidden), dtype=np.float32)
