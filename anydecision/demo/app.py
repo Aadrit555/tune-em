@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional
 import gradio as gr
 
 from anydecision.bias.templates import DEFAULT_TEMPLATES
-from anydecision.calibration.temperature import TemperatureScaling
 from anydecision.core.engine import DecisionEngine
 from anydecision.core.question import Question
 from anydecision.core.types import DecisionLevel
@@ -16,10 +15,8 @@ from anydecision.core.types import DecisionLevel
 def create_demo_interface() -> gr.Blocks:
     """Build Gradio interface for visual probability readout and selective prediction."""
     engine = DecisionEngine(model="mock")
-    # Pre-fit a default temperature calibrator so L2 works out-of-the-box
-    default_calibrator = TemperatureScaling(temperature=1.45)
-    default_calibrator.fitted = True
-    engine.calibrator = default_calibrator
+    # No fake-fitted calibrator: L2 without fitted calibration falls back
+    # cleanly (calibrated=False) instead of pretending T=1.45 is calibrated.
 
     with gr.Blocks(title="anydecision: Typed LLM Decision Runtime") as demo:
         gr.Markdown(

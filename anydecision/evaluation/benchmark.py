@@ -24,6 +24,10 @@ class BenchmarkResult(BaseModel):
     benchmark_name: str
     num_samples: int
     level: str
+    reproducibility: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Reproducibility manifest (versions, seed, model fingerprint, run hash).",
+    )
     accuracy: float
     ece: float
     adaptive_ece: float
@@ -129,10 +133,18 @@ class BenchmarkRunner:
         sel_acc = float(selective_correct / selective_total) if selective_total > 0 else 1.0
         abst_rate = float(abstained_count / len(samples)) if samples else 0.0
 
+        from anydecision.utils.manifest import ReproducibilityManifest
+
+        manifest = ReproducibilityManifest.generate(
+            model_metadata=self.engine.metadata,
+            templates=[name],
+            seed=0,
+        )
         return BenchmarkResult(
             benchmark_name=name,
             num_samples=len(samples),
             level=level.value,
+            reproducibility=manifest.model_dump(),
             accuracy=report.accuracy,
             ece=report.ece,
             adaptive_ece=report.adaptive_ece,

@@ -234,8 +234,8 @@ class TerminalUI:
         )
         menu_table.add_row(
             "[7]",
-            "DOOM Tactical Combat Arena",
-            "Real-time AI combat simulation: Imps, Barons of Hell, Cyberdemon with Expected Utility survival policies",
+            "Toy-Combat Arena (SYNTHETIC)",
+            "Seeded synthetic skirmishes for policy unit tests (not real DOOM / ViZDoom)",
         )
         menu_table.add_row(
             "[Q]",
@@ -275,7 +275,15 @@ class TerminalUI:
             choices = selected_preset["choices"]
             action_dict = selected_preset.get("actions")
             if "utilities" in selected_preset:
-                utility_matrix_obj = UtilityMatrix(selected_preset["utilities"])
+                raw_grid = selected_preset["utilities"]
+                utility_matrix_obj = UtilityMatrix(
+                    actions=list(raw_grid.keys()),
+                    states=list(choices),
+                    matrix={
+                        act: {s: float(vals.get(s, 0.0)) for s in choices}
+                        for act, vals in raw_grid.items()
+                    },
+                )
         else:
             question_text = Prompt.ask("\nEnter question text")
             choices_raw = Prompt.ask("Enter valid choices (comma-separated)", default="yes, no")
@@ -441,7 +449,13 @@ class TerminalUI:
             samples = create_topic_categorization_benchmark(n_samples=sample_size)
             ds_name = "Topic Categorization"
         else:
-            samples = create_agent_safety_tasks()[:sample_size]
+            from anydecision.evaluation.benchmark import BenchmarkSample
+
+            tasks = create_agent_safety_tasks()[:sample_size]
+            samples = [
+                BenchmarkSample(question=t.question, ground_truth=t.optimal_action)
+                for t in tasks
+            ]
             ds_name = "Agent Safety"
 
         evaluator = DecisionEconomicsEvaluator(
@@ -671,12 +685,47 @@ class TerminalUI:
             vllm_path = Prompt.ask("Enter vLLM model path", default="Qwen/Qwen2.5-7B-Instruct")
             try:
                 self.console.print(f"[bold cyan]Initializing vLLM backend with {vllm_path}...[/bold cyan]")
-                self.engine = DecisionEngine(model=vllm_path, backend="vllm")
+                self.engine = DecisionEngine(model="vllm", model_name_or_path=vllm_path)
                 self.console.print(f"[bold green]Successfully connected to vLLM engine {vllm_path}.[/bold green]")
             except Exception as err:
                 self.console.print(f"[bold red]vLLM initialization failed (check vllm install/GPU): {err}[/bold red]")
 
         time.sleep(1.2)
+
+    def view_doom_arena(self) -> None:
+        """Module 7: Synthetic toy-combat arena (labeled synthetic, fast unit-test env)."""
+        self.clear()
+        self.print_header(subtitle="Toy-Combat Arena (SYNTHETIC demo environment)")
+        self.console.print(
+            "[bold yellow]SYNTHETIC simulator for policy unit tests — not real DOOM, "
+            "not ViZDoom. Use `anydecision vizdoom` for live-engine evaluation.[/bold yellow]\n"
+        )
+        episodes = IntPrompt.ask("Episodes", default=2)
+        difficulty = Prompt.ask("Difficulty", choices=["easy", "medium", "hard", "boss"], default="medium")
+        try:
+            from anydecision.games.doom import DoomCombatBenchmarkRunner
+
+            stats = DoomCombatBenchmarkRunner.run_simulation(
+                engine=self.engine,
+                num_episodes=int(episodes),
+                difficulty=str(difficulty),
+                render_console=False,
+            )
+        except Exception as err:
+            self.console.print(f"[bold red]Arena run failed: {err}[/bold red]")
+            Prompt.ask("\n[bold green]Press Enter to return to menu...[/bold green]")
+            return
+
+        table = Table(box=DOUBLE, title="SYNTHETIC ARENA RESULTS")
+        table.add_column("Metric", style="bold white")
+        table.add_column("Value", style="bold yellow")
+        table.add_row("Episodes", str(stats.get("num_episodes", episodes)))
+        table.add_row("Survival rate", f"{float(stats.get('survival_rate', 0.0)) * 100:.1f}%")
+        table.add_row("Total kills (synthetic)", str(stats.get("total_kills", 0)))
+        table.add_row("Mean latency", f"{float(stats.get('mean_latency_ms', 0.0)):.2f} ms")
+        table.add_row("Decisions/sec", f"{float(stats.get('decisions_per_second', 0.0)):.1f}")
+        self.console.print(table)
+        Prompt.ask("\n[bold green]Press Enter to return to menu...[/bold green]")
 
 
 def run_tui(model: str = "mock") -> None:

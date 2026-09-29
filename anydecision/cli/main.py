@@ -178,6 +178,16 @@ def tui(
 
 
 @app.command()
+def showcase(
+    fast: bool = typer.Option(False, "--fast", help="Skip pacing sleeps (CI-friendly)"),
+    games: bool = typer.Option(False, "--games", help="Append a 1-episode live ViZDoom run"),
+) -> None:
+    """Run the recordable product showcase (deterministic, mock backend, no prompts)."""
+    from anydecision.demo.showcase import run_showcase
+    run_showcase(fast=fast, games=games)
+
+
+@app.command()
 def doom(
     episodes: int = typer.Option(3, "--episodes", "-e", help="Number of DOOM combat episodes to simulate"),
     difficulty: str = typer.Option("medium", "--difficulty", "-d", help="Difficulty: medium, hard, or boss"),
