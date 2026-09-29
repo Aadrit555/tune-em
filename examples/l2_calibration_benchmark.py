@@ -1,5 +1,7 @@
 """L2 Calibration: Fitting post-hoc calibration, evaluating ECE, and saving artifacts."""
 
+from pathlib import Path
+
 from anydecision import (
     CalibrationReport,
     DecisionEngine,
@@ -25,8 +27,12 @@ print("=" * 65)
 calibrator = engine.calibrate(calib_data, method="temperature")
 print(f"Fitted Temperature Scaling Parameter: T = {getattr(calibrator, 'temperature', 1.0):.4f}")
 
-# 4. Save versioned artifact
-artifact_path = "artifacts/demo_escalation_head.json"
+# 4. Save versioned artifact (scratch dir so running the example never
+# dirties the repo; the committed artifacts/demo_escalation_head.json is a
+# fixed fixture, not a regenerable output).
+import tempfile
+
+artifact_path = str(Path(tempfile.mkdtemp(prefix="anydecision_demo_")) / "demo_escalation_head.json")
 engine.save_calibration(artifact_path, question_schema="customer_escalation_v1")
 print(f"Saved versioned calibration artifact to: {artifact_path}")
 
