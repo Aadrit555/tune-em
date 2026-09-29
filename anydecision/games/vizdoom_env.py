@@ -131,6 +131,9 @@ class ViZDoomScoreReport(BaseModel):
     scenario: str
     victory_criterion: str
     resolution: str = "1024x768"
+    frame_skip: int = 4
+    attack_frame_skip: int = 4
+    low_ammo_threshold: int = 8
     observation_mode: str = "HYBRID"
     policy: str = "anydecision"
     episodes: int = 0
@@ -488,6 +491,9 @@ class ViZDoomDecisionRunner:
         skill: int = 4,
         max_steps_per_episode: Optional[int] = None,
         frame_skip: int = 4,
+        attack_frame_skip: int = 4,
+        low_ammo_threshold: int = 8,
+        low_ammo_skip: int = 1,
         window_visible: bool = False,
         render_console: bool = True,
         observation_mode: str = "HYBRID",
@@ -630,6 +636,13 @@ class ViZDoomDecisionRunner:
             "TRACKING_FIRE_RIGHT": make_vec("TURN_RIGHT", "ATTACK"),
         }
         action_names = list(action_map.keys())
+        # Trigger discipline: firing actions hold the trigger briefly while
+        # movement uses the full frame skip. Stretches limited scenario ammo
+        # across far more decisions (measured, not assumed).
+        attack_idx = {button_names.index(b) for b in ("ATTACK",) if b in button_names}
+        action_skip: Dict[str, int] = {}
+        for _aname, _avec in action_map.items():
+            action_skip[_aname] = attack_frame_skip if any(_avec[i] for i in attack_idx) else frame_skip
         matrix = utility_matrix or build_tactical_utility_matrix(action_names)
         criterion = victory_criterion_for(scenario)
 
@@ -749,8 +762,13 @@ class ViZDoomDecisionRunner:
                 action_counts[chosen_act] += 1
 
                 # Execute the selected action vector in the ViZDoom engine.
+                # Adaptive burst: full bursts while ammo is healthy, single
+                # shots below the low-ammo threshold (measured trade-off).
                 action_vector = action_map.get(chosen_act, [0] * len(buttons))
-                step_reward = game.make_action(action_vector, frame_skip)
+                skip = action_skip.get(chosen_act, frame_skip)
+                if skip != frame_skip and float(detail.get("ammo", 0.0) or 0.0) <= low_ammo_threshold:
+                    skip = low_ammo_skip
+                step_reward = game.make_action(action_vector, skip)
                 ep_reward += step_reward
                 ep_kills_now = int(_safe_game_var(game, vzd.GameVariable.KILLCOUNT, 0.0))
 
@@ -830,6 +848,9 @@ class ViZDoomDecisionRunner:
             scenario=scenario,
             victory_criterion=criterion,
             resolution=f"{game.get_screen_width()}x{game.get_screen_height()}",
+            frame_skip=frame_skip,
+            attack_frame_skip=attack_frame_skip,
+            low_ammo_threshold=low_ammo_threshold,
             observation_mode=mode.value,
             policy=policy_kind.value,
             episodes=num_episodes,

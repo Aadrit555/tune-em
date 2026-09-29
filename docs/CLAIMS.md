@@ -238,8 +238,12 @@ demonstrate machinery (plumbing, shapes, invariants), never model capability.
   held-out-run dev 0.805 (vision features lack radar bearing, so some
   demonstrator decisions are unpredictable from them — reported, not hidden).
   Closed-loop on fresh seeds: basic 2/2 kills with identical action
-  distributions; defend_the_center 16–19 kills per 2 episodes vs 18–21 for
-  the demonstrator. The demonstrator searches (radar-bearing turns,
+  distributions;   defend_the_center 16–21 kills per 2 episodes vs 18–21 for
+  the demonstrator (adaptive burst: full 4-tic bursts while ammo is healthy,
+  single shots below 8 rounds; measured burst ladder 1/2/4 tics).
+  Console ammo cheats were tested (`give bullets`, `give Clip`, …) and are
+  blocked by the engine, so no ammo is conjured — longevity comes from
+  trigger discipline only. The demonstrator searches (radar-bearing turns,
   in-place sweep) instead of blind-advancing, and fires while acquiring.
   An earlier circle-strafe variant was removed after traces proved it spun
   away from targets; a wall-hugging advance variant was removed after a
