@@ -45,11 +45,16 @@ def test_cli_doom():
     assert "DOOM COMBAT BENCHMARK RESULTS" in res.output
 
 
-def test_cli_compare_von():
+def test_cli_compare_von_requires_data_dir():
+    # Real shootout needs JevBench data; without --data-dir it must fail loudly.
+    res = runner.invoke(app, ["compare-von"])
+    assert res.exit_code != 0
+
+
+def test_cli_compare_von_rejects_test_split():
+    # The locked test split is never burnable from the CLI.
     res = runner.invoke(app, [
-        "compare-von",
-        "--model", "mock",
+        "compare-von", "--data-dir", "nonexistent", "--split", "test",
     ])
-    assert res.exit_code == 0
-    assert "HEAD-TO-HEAD BENCHMARK" in res.output
+    assert res.exit_code != 0
 

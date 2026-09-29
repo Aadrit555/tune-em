@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import List, Optional
 import typer
+from rich.box import DOUBLE
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -200,11 +202,77 @@ def doom(
 
 @app.command()
 def compare_von(
-    model: str = typer.Option("mock", "--model", "-m", help="Decision model backend"),
+    data_dir: str = typer.Option(..., "--data-dir", help="JevBench datasets/public dir (easy/original/hard.jsonl)"),
+    split: str = typer.Option("dev", "--split", help="Split to evaluate (train/dev only; test stays locked)"),
+    model: str = typer.Option("Qwen/Qwen2.5-0.5B-Instruct", "--model", "-m", help="Our entrant's causal LM"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Score JSON artifact path"),
 ) -> None:
-    """Run comprehensive head-to-head empirical benchmark: anydecision vs von."""
-    from anydecision.evaluation.von_comparison import VonHeadToHeadBenchmark
-    VonHeadToHeadBenchmark.run_benchmark(model=model, render_console=True)
+    """Real head-to-head: native von-sdk 1.3 vs anydecision on identical JevBench items.
+
+    Runs both entrants (same state/instructions/labels), then scores accuracy,
+    ECE, Brier, latency, and McNemar+MDE. Below-MDE deltas are UNRESOLVABLE.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    if split not in ("train", "dev"):
+        raise typer.BadParameter("--split must be 'train' or 'dev' (test stays locked; see PROTOCOL.md)")
+    try:
+        import von  # noqa: F401
+    except ImportError:
+        console.print("[bold red]compare-von requires 'von-sdk>=1.3.1' (pip install von-sdk).[/bold red]")
+        raise typer.Exit(code=2)
+    for f in ("easy.jsonl", "original.jsonl", "hard.jsonl"):
+        if not Path(data_dir, f).exists():
+            console.print(f"[bold red]Missing {f} in --data-dir. Clone https://github.com/fstandhartinger/jevbench and pass datasets/public.[/bold red]")
+            raise typer.Exit(code=2)
+
+    harness = Path(__file__).resolve().parents[2] / "benchmarks" / "jevbench_shootout"
+    tmp = Path.cwd() / ".compare_von_tmp"
+    tmp.mkdir(exist_ok=True)
+    von_out = tmp / f"von_{split}.json"
+    ours_out = tmp / f"ours_{split}.json"
+    splits = harness / "splits.json"
+    if not splits.exists():
+        r = subprocess.run([sys.executable, str(harness / "split.py"), "--data-dir", data_dir,
+                            "--out", str(splits), "--seed", "0"])
+        if r.returncode != 0:
+            raise typer.Exit(code=r.returncode)
+    for cmd in (
+        [sys.executable, str(harness / "run_von.py"), "--data-dir", data_dir,
+         "--splits", str(splits), "--split", split, "--out", str(von_out)],
+        [sys.executable, str(harness / "run_ours_lm.py"), "--data-dir", data_dir,
+         "--splits", str(splits), "--split", split, "--out", str(ours_out),
+         "--model", model],
+    ):
+        console.print(f"[dim]$ {' '.join(cmd)}[/dim]")
+        r = subprocess.run(cmd)
+        if r.returncode != 0:
+            raise typer.Exit(code=r.returncode)
+
+    sys.path.insert(0, str(harness))
+    from score import compare, summarize, load_records
+    ref_recs, _ = load_records(str(von_out))
+    cmp_recs, _ = load_records(str(ours_out))
+    ref_s, cmp_s = summarize(str(von_out)), summarize(str(ours_out))
+    h2h = compare(ref_recs, cmp_recs)
+    if output:
+        Path(output).write_text(json.dumps(
+            {"von": ref_s, "ours": cmp_s, "head_to_head": h2h}, indent=2), encoding="utf-8")
+
+    table = Table(box=DOUBLE, title=f"anydecision vs von-1.3 ({split} split, n={h2h['n']})")
+    table.add_column("Entrant", style="bold white")
+    table.add_column("Accuracy", style="bold yellow")
+    table.add_column("ECE", style="bold yellow")
+    table.add_column("Brier", style="bold yellow")
+    table.add_column("Mean latency", style="bold cyan")
+    for name, s in (("von-1.3 (native)", ref_s), ("anydecision+" + model.split("/")[-1], cmp_s)):
+        table.add_row(name, f"{s['accuracy']:.3f}", f"{s['ece']:.4f}",
+                      f"{s['brier']:.4f}", f"{s['mean_latency_ms']:.0f} ms")
+    console.print(table)
+    console.print(f"McNemar p={h2h['mcnemar_p']:.4f} MDE={h2h['mde']:.3f} "
+                  f"discordant={h2h['discordant']} -> [bold]{h2h['verdict']}[/bold]")
 
 
 @app.command("real-doom")
