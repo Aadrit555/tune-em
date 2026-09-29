@@ -96,11 +96,13 @@ VICTORY_CRITERIA: Dict[str, str] = {
     "health_gathering_supreme": "survived episode without death (collection objective)",
     "my_way_home": "survived episode without death (navigation objective)",
     "take_cover": "survived episode without death (survival objective)",
+    "arena300": "kills > 0 (arena clearance; no exit switch, episode runs full budget)",
 }
 
 COMBAT_SCENARIOS = {
     "basic", "simpler_basic", "rocket_basic", "defend_the_center",
     "defend_the_line", "deadly_corridor", "cig", "deathmatch",
+    "arena300",
 }
 
 
@@ -292,6 +294,16 @@ def build_tactical_utility_matrix(
             "danger_melee_rush": 30.0, "target_locked_fire": 30.0,
             "target_flank_left": -25.0, "target_flank_right": 80.0,
             "target_behind": 60.0, "tactical_search_patrol": 20.0,
+        },
+        "PATROL_LEFT": {
+            "danger_melee_rush": 50.0, "target_locked_fire": -20.0,
+            "target_flank_left": 40.0, "target_flank_right": 40.0,
+            "target_behind": 60.0, "tactical_search_patrol": 80.0,
+        },
+        "PATROL_RIGHT": {
+            "danger_melee_rush": 50.0, "target_locked_fire": -20.0,
+            "target_flank_left": 40.0, "target_flank_right": 40.0,
+            "target_behind": 60.0, "tactical_search_patrol": 80.0,
         },
     }
     matrix = {a: grid.get(a, {s: 0.0 for s in states}) for a in action_names}
@@ -493,9 +505,10 @@ def scripted_baseline_action(detail: Dict[str, Any]) -> str:
     if detail.get("visible_hostiles"):
         # Visible but centered and unlocked: settle onto target.
         return "SNAP_TURN_LEFT"
-    # Nothing visible: use radar bearing when available, else rotate in
-    # place to sweep-scan (never blind-advance into walls). Fixed LEFT keeps
-    # the rule memoryless and clonable; rotation still covers 360 degrees.
+    # Nothing visible: use radar bearing when available, else patrol a
+    # walking arc (never blind-advance into walls, never spin in place).
+    # Fixed LEFT keeps the rule memoryless and clonable; the arc covers
+    # ground, collecting nearby stockpiles by genuine walk-over pickup.
     rel = detail.get("nearest_rel_deg")
     if rel is not None:
         if rel > RADAR_BEARING_DEG:
@@ -503,7 +516,7 @@ def scripted_baseline_action(detail: Dict[str, Any]) -> str:
         if rel < -RADAR_BEARING_DEG:
             return "SNAP_TURN_LEFT"
         return "TACTICAL_ADVANCE"
-    return "SNAP_TURN_LEFT"
+    return "PATROL_LEFT"
 
 
 class ViZDoomDecisionRunner:
@@ -670,6 +683,8 @@ class ViZDoomDecisionRunner:
             "SNAP_TURN_RIGHT": make_vec("TURN_RIGHT"),
             "TRACKING_FIRE_LEFT": make_vec("TURN_LEFT", "ATTACK"),
             "TRACKING_FIRE_RIGHT": make_vec("TURN_RIGHT", "ATTACK"),
+            "PATROL_LEFT": make_vec("TURN_LEFT", "MOVE_FORWARD"),
+            "PATROL_RIGHT": make_vec("TURN_RIGHT", "MOVE_FORWARD"),
         }
         action_names = list(action_map.keys())
         # Trigger discipline: firing actions hold the trigger briefly while

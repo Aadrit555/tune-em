@@ -258,7 +258,8 @@ def test_arena300_loads_and_plays(check_vizdoom):
     )
     assert report.scenario == "arena300"
     assert report.total_decisions > 0
-    assert report.mean_max_ammo >= 50.0
+    # Patrol movement genuinely walks over the stockpile: starting mag is 50.
+    assert report.mean_max_ammo > 50.0
 
 
 def test_baseline_policies_run_same_action_space(check_vizdoom):

@@ -4,9 +4,12 @@ Reproducible UDMF edit of ViZDoom's bundled basic.wad (PWAD, MAP01):
   - 6x ClipBox (DoomEd 2048, 50 bullets each = 300 rounds) ringed around the
     player start for genuine engine pickup (ITEMCOUNT-verified, never conjured).
   - 3x Zombieman (DoomEd 3004) at fixed bearings for extra live targets.
-All other lumps (geometry, nodes, ACS spawn/reward scripts) are byte-identical
-to basic.wad, so physics, reward (-5/shot, +106/kill), and KILLCOUNT behave
-identically. THINGS edits never invalidate the BSP.
+Only geometry is reused from basic.wad. The ACS BEHAVIOR lump is deliberately
+DROPPED: its Exit_Normal-on-kill script would end the episode the moment the
+first target dies, before the Zombiemen and the stockpile come into play.
+Without it the episode runs the full step budget (or until player death),
+kills come from KILLCOUNT, and reward is raw engine reward. THINGS edits
+never invalidate the BSP, and ZDoom rebuilds nodes from TEXTMAP.
 
 Usage: python benchmarks/build_arena300.py [--out anydecision/games/data/arena300.wad]
 """
@@ -58,9 +61,13 @@ def build(base_wad: Path) -> bytes:
 
     px, py = PLAYER_START
     text = lumps["TEXTMAP"].decode("utf-8")
-    # 6 ClipBoxes on a 96-unit ring around the player start (300 rounds).
-    for k in range(6):
-        ang = math.radians(60.0 * k + 30.0)
+    # 6 ClipBoxes (300 rounds): 2 within spawn contact range so the opening
+    # turns collect them by genuine walk-over, 4 on a 96-unit ring for
+    # mid-game collection during combat movement.
+    for dx, dy in ((20.0, 0.0), (-20.0, 0.0)):
+        text += _thing(px + dx, py + dy, CLIPBOX)
+    for k in range(4):
+        ang = math.radians(90.0 * k + 45.0)
         text += _thing(px + 96.0 * math.cos(ang), py + 96.0 * math.sin(ang), CLIPBOX)
     # 3 Zombiemen on a 288-unit ring (fixed bearings, deterministic map).
     for k, deg in enumerate((30.0, 150.0, 270.0)):
@@ -68,13 +75,19 @@ def build(base_wad: Path) -> bytes:
         text += _thing(px + 288.0 * math.cos(ang), py + 288.0 * math.sin(ang), ZOMBIEMAN, angle=0)
     lumps["TEXTMAP"] = text.encode("utf-8")
 
+    # Emit MAP01 + TEXTMAP + ENDMAP only. BEHAVIOR/SCRIPTS/DIALOGUE/ZNODES
+    # are dropped (no exit-script, nodes rebuilt by ZDoom from TEXTMAP).
+    keep = ["MAP01", "TEXTMAP", "ENDMAP"]
     # Rebuild the WAD byte layout (lumps back-to-back, fresh directory).
-    out = bytearray(b"PWAD" + struct.pack("<II", len(entries), 0))
+    out = bytearray(b"PWAD" + struct.pack("<II", 0, 0))
     new_entries = []
     for _, _, name in entries:
+        if name not in keep:
+            continue
         data = lumps[name]
         new_entries.append((len(out), len(data), name))
         out += data
+    out[4:8] = struct.pack("<I", len(new_entries))
     dir_off = len(out)
     out[8:12] = struct.pack("<I", dir_off)
     for pos, size, name in new_entries:

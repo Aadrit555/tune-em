@@ -272,9 +272,15 @@ demonstrate machinery (plumbing, shapes, invariants), never model capability.
   stocks 6 ClipBoxes = 300 rounds plus 3 Zombiemen on MAP01. Collection is
   genuine engine pickup (walk-over contact; verified 50→150 ammo on a
   coverage walk). Console ammo cheats were tested and are engine-blocked, so
-  no rounds are conjured — the stockpile is level design, disclosed as such.
+  no   rounds are conjured — the stockpile is level design, disclosed as such.
   Note: this engine build's ITEMCOUNT does not count ClipBox pickups, so ammo
   economy is read from ammo deltas (`mean_max_ammo`), not ITEMCOUNT.
+- **Collection proof:** the blind-search behavior is a walking patrol (not a
+  spin), so combat movement genuinely walks over stockpiles: arena300
+  learned runs reach `mean_max_ammo` 200 (50 + 150 collected) with zero
+  scripted-vs-learned divergence (defend 14–21 = 14–21 on fresh seeds).
+  Demonstrations are collected in deployment VISION mode so the clone never
+  trains on radar it won't have.
 - **Evidence:** `tests/test_vizdoom.py` (WAD structure census + live load
   with ClipBox/Zombieman objects present + learned play reporting
   `mean_max_ammo`).

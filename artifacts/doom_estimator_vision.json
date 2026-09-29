@@ -1,6 +1,6 @@
 {
-  "train_n": 635,
-  "dev_n": 203,
+  "train_n": 1488,
+  "dev_n": 385,
   "train_runs": [
     [
       "arena300",
@@ -198,9 +198,8 @@
     ]
   ],
   "classes": [
+    "PATROL_LEFT",
     "PRECISION_ATTACK",
-    "SNAP_TURN_LEFT",
-    "SNAP_TURN_RIGHT",
     "TRACKING_FIRE_LEFT",
     "TRACKING_FIRE_RIGHT"
   ],
@@ -210,8 +209,8 @@
   ],
   "seed": 0,
   "alpha": 0.001,
-  "train_accuracy": 0.6330708661417322,
-  "dev_accuracy": 0.6009852216748769,
+  "train_accuracy": 1.0,
+  "dev_accuracy": 1.0,
   "n_features": 6,
   "feature_names": [
     "health",
@@ -229,11 +228,11 @@
     "defend_the_center",
     "arena300"
   ],
-  "demonstrator": "scripted+search",
+  "demonstrator": "scripted-vision-patrol",
   "kill_horizon": 10,
   "features": "vision-only-width-invariant",
   "resolution": "1024x768",
   "targeting": "bestiary-allowlist",
-  "saved_at": "2026-09-29T22:33:11.202275+00:00",
+  "saved_at": "2026-09-29T22:45:26.544868+00:00",
   "kind": "doom_state_estimator_mlp"
 }
