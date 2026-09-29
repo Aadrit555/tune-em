@@ -278,6 +278,16 @@ def build_tactical_utility_matrix(
             "target_flank_left": -35.0, "target_flank_right": 90.0,
             "target_behind": 80.0, "tactical_search_patrol": 50.0,
         },
+        "TRACKING_FIRE_LEFT": {
+            "danger_melee_rush": 30.0, "target_locked_fire": 30.0,
+            "target_flank_left": 80.0, "target_flank_right": -25.0,
+            "target_behind": 60.0, "tactical_search_patrol": 20.0,
+        },
+        "TRACKING_FIRE_RIGHT": {
+            "danger_melee_rush": 30.0, "target_locked_fire": 30.0,
+            "target_flank_left": -25.0, "target_flank_right": 80.0,
+            "target_behind": 60.0, "tactical_search_patrol": 20.0,
+        },
     }
     matrix = {a: grid.get(a, {s: 0.0 for s in states}) for a in action_names}
     return UtilityMatrix(actions=action_names, states=states, matrix=matrix)
@@ -417,10 +427,19 @@ def extract_observation(
 
 
 def scripted_baseline_action(detail: Dict[str, Any]) -> str:
-    """Labeled scripted heuristic baseline (not a learned policy)."""
+    """Labeled scripted heuristic baseline (not a learned policy).
+
+    Fires while acquiring (circle-strafe toward the threat) instead of dry
+    turning, so visible targets take fire during acquisition. Still a fixed
+    transparent heuristic; the learned estimator clones this behavior.
+    """
     if detail.get("crosshair_locked"):
         return "PRECISION_ATTACK"
     offset = float(detail.get("target_offset_x", 0.0) or 0.0)
+    if offset < -4.0:
+        return "TRACKING_FIRE_LEFT"
+    if offset > 4.0:
+        return "TRACKING_FIRE_RIGHT"
     if offset < 0:
         return "SNAP_TURN_LEFT"
     if offset > 0:
@@ -576,6 +595,8 @@ class ViZDoomDecisionRunner:
             "ASSAULT_ADVANCE": make_vec("MOVE_FORWARD", "ATTACK"),
             "SNAP_TURN_LEFT": make_vec("TURN_LEFT"),
             "SNAP_TURN_RIGHT": make_vec("TURN_RIGHT"),
+            "TRACKING_FIRE_LEFT": make_vec("TURN_LEFT", "ATTACK"),
+            "TRACKING_FIRE_RIGHT": make_vec("TURN_RIGHT", "ATTACK"),
         }
         action_names = list(action_map.keys())
         matrix = utility_matrix or build_tactical_utility_matrix(action_names)

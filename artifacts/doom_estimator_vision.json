@@ -1,6 +1,6 @@
 {
-  "train_n": 936,
-  "dev_n": 107,
+  "train_n": 609,
+  "dev_n": 181,
   "train_runs": [
     [
       "basic",
@@ -12,12 +12,6 @@
       "basic",
       "scripted",
       0,
-      2
-    ],
-    [
-      "basic",
-      "scripted",
-      0,
       3
     ],
     [
@@ -25,6 +19,12 @@
       "scripted",
       0,
       4
+    ],
+    [
+      "basic",
+      "scripted",
+      1,
+      1
     ],
     [
       "basic",
@@ -72,66 +72,6 @@
       "basic",
       "scripted",
       3,
-      3
-    ],
-    [
-      "basic",
-      "scripted",
-      4,
-      1
-    ],
-    [
-      "basic",
-      "scripted",
-      4,
-      2
-    ],
-    [
-      "basic",
-      "scripted",
-      4,
-      4
-    ],
-    [
-      "basic",
-      "scripted",
-      5,
-      2
-    ],
-    [
-      "basic",
-      "scripted",
-      5,
-      4
-    ],
-    [
-      "basic",
-      "scripted",
-      6,
-      1
-    ],
-    [
-      "basic",
-      "scripted",
-      6,
-      3
-    ],
-    [
-      "basic",
-      "scripted",
-      6,
-      4
-    ],
-    [
-      "basic",
-      "scripted",
-      7,
-      3
-    ],
-    [
-      "basic",
-      "scripted",
-      7,
       4
     ],
     [
@@ -162,19 +102,7 @@
       "defend_the_center",
       "scripted",
       2,
-      1
-    ],
-    [
-      "defend_the_center",
-      "scripted",
-      2,
       2
-    ],
-    [
-      "defend_the_center",
-      "scripted",
-      3,
-      1
     ],
     [
       "defend_the_center",
@@ -187,8 +115,8 @@
     [
       "basic",
       "scripted",
-      1,
-      1
+      0,
+      2
     ],
     [
       "basic",
@@ -206,50 +134,26 @@
       "basic",
       "scripted",
       3,
-      4
-    ],
-    [
-      "basic",
-      "scripted",
-      4,
       3
     ],
     [
-      "basic",
+      "defend_the_center",
       "scripted",
-      5,
+      2,
       1
     ],
     [
-      "basic",
+      "defend_the_center",
       "scripted",
-      5,
-      3
-    ],
-    [
-      "basic",
-      "scripted",
-      6,
-      2
-    ],
-    [
-      "basic",
-      "scripted",
-      7,
+      3,
       1
-    ],
-    [
-      "basic",
-      "scripted",
-      7,
-      2
     ]
   ],
   "classes": [
     "PRECISION_ATTACK",
-    "SNAP_TURN_LEFT",
-    "SNAP_TURN_RIGHT",
-    "TACTICAL_ADVANCE"
+    "TACTICAL_ADVANCE",
+    "TRACKING_FIRE_LEFT",
+    "TRACKING_FIRE_RIGHT"
   ],
   "hidden": [
     32,
@@ -257,8 +161,8 @@
   ],
   "seed": 0,
   "alpha": 0.001,
-  "train_accuracy": 1.0,
-  "dev_accuracy": 1.0,
+  "train_accuracy": 0.9967159277504105,
+  "dev_accuracy": 0.994475138121547,
   "n_features": 6,
   "feature_names": [
     "health",
@@ -275,9 +179,9 @@
     "basic",
     "defend_the_center"
   ],
-  "demonstrator": "scripted",
+  "demonstrator": "scripted+tracking-fire",
   "kill_horizon": 10,
   "features": "vision-only",
-  "saved_at": "2026-09-29T20:00:42.986437+00:00",
+  "saved_at": "2026-09-29T21:19:19.022170+00:00",
   "kind": "doom_state_estimator_mlp"
 }
