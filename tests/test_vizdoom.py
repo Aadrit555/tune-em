@@ -177,6 +177,7 @@ def test_learned_policy_executes_trained_estimator(check_vizdoom):
         "TACTICAL_RETREAT", "TACTICAL_ADVANCE", "ASSAULT_ADVANCE",
         "SNAP_TURN_LEFT", "SNAP_TURN_RIGHT",
         "TRACKING_FIRE_LEFT", "TRACKING_FIRE_RIGHT",
+        "PATROL_LEFT", "PATROL_RIGHT",
     }
     engine = DecisionEngine(model="mock")
     report = ViZDoomDecisionRunner.run_simulation(
