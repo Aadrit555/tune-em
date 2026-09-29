@@ -333,6 +333,7 @@ def vizdoom_cmd(
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Machine-readable JSON artifact path"),
     estimator: Optional[str] = typer.Option(None, "--estimator", help="State-estimator .npz (learned policy; default: bundled artifact)"),
     hold_open: bool = typer.Option(False, "--hold-open", help="Keep the game window open after the run (render mode)"),
+    resolution: str = typer.Option("1024x768", "--resolution", help="Render resolution, e.g. 640x480, 800x600, 1024x768"),
 ) -> None:
     """Run a typed decision policy inside the live ViZDoom engine (ViZDoom integration)."""
     from anydecision.games.vizdoom_env import ViZDoomDecisionRunner
@@ -352,6 +353,7 @@ def vizdoom_cmd(
         output_path=output,
         estimator_path=estimator,
         hold_open=hold_open,
+        screen_resolution=resolution,
     )
 
 

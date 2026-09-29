@@ -299,9 +299,16 @@ _IGNORED_LABELS = {
 }
 
 
+# Sensor constants (documented, tunable in one place).
+CROSSHAIR_LOCK_RATIO = 0.055  # |offset| / screen_width below this counts as locked
+TRACKING_OFFSET_PX = 4.0  # beyond this (at 800px width) acquisition fires while turning
+RADAR_BEARING_DEG = 10.0  # radar bearing above this turns toward the threat
+
 # Fixed sensor feature order for learned estimators (behavior cloning value).
 # All values are numeric and game-engine grounded; VISION-safe subset excludes
 # radar geometry (nearest_dist/nearest_rel_deg/radar_hostiles are None there).
+# target_offset_x is normalized by half screen width so features are
+# resolution-invariant.
 FEATURE_ORDER = [
     "health", "armor", "ammo",
     "visible_hostiles", "crosshair_locked", "target_offset_x",
@@ -311,6 +318,7 @@ FEATURE_ORDER = [
 
 def features_from_detail(detail: Dict[str, Any]) -> List[float]:
     """Numeric feature vector in FEATURE_ORDER (booleans -> 0.0/1.0, None -> sentinel)."""
+    width = float(detail.get("screen_width") or 800.0)
     vals: List[float] = []
     for key in FEATURE_ORDER:
         v = detail.get(key)
@@ -318,10 +326,12 @@ def features_from_detail(detail: Dict[str, Any]) -> List[float]:
             vals.append(-1.0)
         elif isinstance(v, bool):
             vals.append(1.0 if v else 0.0)
+        elif key == "target_offset_x":
+            vals.append(float(v) / max(1.0, width / 2.0))
         else:
             vals.append(float(v))
     # Normalize roughly to unit-ish ranges for stable MLP training.
-    scales = [100.0, 100.0, 50.0, 4.0, 1.0, 160.0, 4.0, 1000.0, 180.0]
+    scales = [100.0, 100.0, 50.0, 4.0, 1.0, 1.0, 4.0, 1000.0, 180.0]
     return [v / s for v, s in zip(vals, scales)]
 
 
@@ -346,6 +356,7 @@ def extract_observation(
 
     screen_width = game.get_screen_width() or 320
     screen_center = screen_width / 2.0
+    detail_screen_width = float(screen_width)
     vis_monsters = [
         lbl for lbl in (state.labels or [])
         if lbl.object_name not in _IGNORED_LABELS
@@ -363,7 +374,7 @@ def extract_observation(
         vis_target_name = primary.object_name
         vis_target_size = float(primary.width * primary.height)
         target_offset_x = (primary.x + primary.width / 2.0) - screen_center
-        target_in_crosshair = abs(target_offset_x) / max(1.0, float(screen_width)) <= 0.055
+        target_in_crosshair = abs(target_offset_x) / max(1.0, float(screen_width)) <= CROSSHAIR_LOCK_RATIO
 
     detail: Dict[str, Any] = {
         "health": health, "armor": armor, "ammo": ammo,
@@ -372,6 +383,7 @@ def extract_observation(
         "target_offset_x": target_offset_x,
         "primary_target": vis_target_name,
         "step": step,
+        "screen_width": detail_screen_width,
     }
 
     if mode in (ObservationMode.STATE, ObservationMode.HYBRID):
@@ -436,10 +448,12 @@ def scripted_baseline_action(detail: Dict[str, Any]) -> str:
     """
     if detail.get("crosshair_locked"):
         return "PRECISION_ATTACK"
+    width = float(detail.get("screen_width") or 800.0)
+    track_px = TRACKING_OFFSET_PX * (width / 800.0)
     offset = float(detail.get("target_offset_x", 0.0) or 0.0)
-    if offset < -4.0:
+    if offset < -track_px:
         return "TRACKING_FIRE_LEFT"
-    if offset > 4.0:
+    if offset > track_px:
         return "TRACKING_FIRE_RIGHT"
     if offset < 0:
         return "SNAP_TURN_LEFT"
@@ -453,9 +467,9 @@ def scripted_baseline_action(detail: Dict[str, Any]) -> str:
     # the rule memoryless and clonable; rotation still covers 360 degrees.
     rel = detail.get("nearest_rel_deg")
     if rel is not None:
-        if rel > 10.0:
+        if rel > RADAR_BEARING_DEG:
             return "SNAP_TURN_RIGHT"
-        if rel < -10.0:
+        if rel < -RADAR_BEARING_DEG:
             return "SNAP_TURN_LEFT"
         return "TACTICAL_ADVANCE"
     return "SNAP_TURN_LEFT"
@@ -484,6 +498,7 @@ class ViZDoomDecisionRunner:
         record_trajectory: bool = False,
         estimator_path: Optional[str] = None,
         hold_open: bool = False,
+        screen_resolution: str = "1024x768",
     ) -> ViZDoomScoreReport:
         if not VIZDOOM_AVAILABLE:
             raise ImportError(
@@ -571,6 +586,9 @@ class ViZDoomDecisionRunner:
                 pass
 
         game.set_doom_skill(skill)
+        res_key = "RES_" + str(screen_resolution).upper().replace("X", "X")
+        resolution = getattr(vzd.ScreenResolution, res_key, vzd.ScreenResolution.RES_1024X768)
+        game.set_screen_resolution(resolution)
         if window_visible:
             game.set_window_visible(True)
         else:

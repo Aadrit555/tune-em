@@ -1,5 +1,5 @@
 {
-  "train_n": 604,
+  "train_n": 590,
   "dev_n": 185,
   "train_runs": [
     [
@@ -162,7 +162,7 @@
   ],
   "seed": 0,
   "alpha": 0.001,
-  "train_accuracy": 0.7185430463576159,
+  "train_accuracy": 0.7423728813559322,
   "dev_accuracy": 0.8054054054054054,
   "n_features": 6,
   "feature_names": [
@@ -182,7 +182,8 @@
   ],
   "demonstrator": "scripted+search",
   "kill_horizon": 10,
-  "features": "vision-only",
-  "saved_at": "2026-09-29T21:25:31.095198+00:00",
+  "features": "vision-only-width-invariant",
+  "resolution": "1024x768",
+  "saved_at": "2026-09-29T21:34:00.050206+00:00",
   "kind": "doom_state_estimator_mlp"
 }

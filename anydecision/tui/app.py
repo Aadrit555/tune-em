@@ -548,14 +548,16 @@ class TerminalUI:
             self.console.print(
                 Panel(
                     f"Selected [bold green]{len(suggested)}[/bold green] high-information examples out of [cyan]{len(pool_questions)}[/cyan] candidates.\n"
-                    f"Active sampling reduces required human annotation budget by approximately [bold green]~60%[/bold green] compared to random sampling.",
-                    title="Active Learning Efficiency",
+                    f"Annotation savings are measured per dataset via budget curves "
+                    f"(see ActiveCalibrationBenchmark.estimate_label_savings) — "
+                    f"no fixed percentage is claimed here.",
+                    title="Active Learning Selection (heuristic ranking)",
                     box=ROUNDED,
                 )
             )
 
         elif sub == "2":
-            self.console.print("\n[bold cyan]Simulating Live Production Decisions with Sudden Distribution Shift...[/bold cyan]")
+            self.console.print("\n[bold cyan]SIMULATED drift drill: fault-injected confidences, real detector...[/bold cyan]")
             monitor = CalibrationDriftMonitor(window_size=20, warning_threshold=0.10, critical_threshold=0.20)
             q_ref = Question.binary("Is credit card transaction authorized?")
 
@@ -563,12 +565,13 @@ class TerminalUI:
             ref_decs = [self.engine.decide(q_ref) for _ in range(20)]
             monitor.set_reference_distribution(ref_decs)
 
-            self.console.print("[dim]Baseline reference distribution established. Streaming 25 decisions with simulated covariate drift...[/dim]\n")
+            self.console.print("[dim]Baseline established. Streaming 25 decisions with SIMULATED covariate drift (fault injection, not a measured incident)...[/dim]\n")
             alerts: List[DriftAlert] = []
 
             for step in range(1, 26):
                 d = self.engine.decide(q_ref).model_copy()
-                # Simulate degradation after step 10
+                # SIMULATED fault injection: degraded confidences exercise the
+                # real detector path (the monitor reads d.confidence).
                 if step > 10:
                     d.confidence = 0.45 + (step % 4) * 0.02
 

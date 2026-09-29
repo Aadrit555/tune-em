@@ -124,7 +124,15 @@ class VLLMBackend(BaseBackend):
         candidate_strings: Dict[str, str],
         scoring_method: str = "length_normalized",
     ) -> Dict[str, Any]:
-        """Sequence logprobs evaluating exact token likelihoods via prompt logprobs with detailed breakdown."""
+        """Sequence logprobs via prompt logprobs with detailed breakdown.
+
+        Exact where the expected token appears in vLLM's returned top-k.
+        Where it does not, the token logprob is a BOUNDED approximation
+        (min over returned top-k, floored at -20.0): by definition the true
+        value is at most the top-k minimum, so this is conservative, never
+        exact. Affected candidates are listed in ``approximated`` — callers
+        must not present those scores as exact probabilities.
+        """
         scorer = SequenceScorer(
             method=SequenceScoringMethod(scoring_method)
             if scoring_method in SequenceScoringMethod._value2member_map_
@@ -144,6 +152,7 @@ class VLLMBackend(BaseBackend):
         outputs = self.llm.generate(full_prompts, sampling_params, use_tqdm=False)
 
         score_breakdowns: Dict[str, SequenceScoreResult] = {}
+        approximated: List[str] = []
         for (key, _), out in zip(candidate_items, outputs):
             info = tokens_info[key]
             p_logprobs = out.prompt_logprobs
@@ -151,13 +160,16 @@ class VLLMBackend(BaseBackend):
 
             if not p_logprobs or not expected_ids:
                 score_breakdowns[key] = scorer.score_sequence([])
+                approximated.append(key)
                 continue
 
             token_lps: List[float] = []
+            token_approx = False
             for idx, expected_tid in enumerate(expected_ids):
                 pos = info.prompt_token_count + idx
                 if pos >= len(p_logprobs) or not p_logprobs[pos]:
                     token_lps.append(-20.0)
+                    token_approx = True
                     continue
 
                 lp_dict = p_logprobs[pos]
@@ -169,8 +181,11 @@ class VLLMBackend(BaseBackend):
                     # We bound this conservative estimate without inventing arbitrary offsets.
                     lowest_lp = min(float(lp.logprob) for lp in lp_dict.values()) if lp_dict else -20.0
                     token_lps.append(min(lowest_lp, -20.0))
+                    token_approx = True
 
             score_breakdowns[key] = scorer.score_sequence(token_lps)
+            if token_approx:
+                approximated.append(key)
 
         keys = list(score_breakdowns.keys())
         scores = np.array([score_breakdowns[k].score for k in keys], dtype=np.float64)
@@ -186,6 +201,7 @@ class VLLMBackend(BaseBackend):
             "length_normalized_scores": {k: score_breakdowns[k].length_normalized_score for k in keys},
             "token_infos": tokens_info,
             "scoring_method": scorer.method.value,
+            "approximated": approximated,
         }
 
     def sequence_logprobs(
