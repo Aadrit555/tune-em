@@ -1,6 +1,6 @@
 {
-  "train_n": 609,
-  "dev_n": 181,
+  "train_n": 604,
+  "dev_n": 185,
   "train_runs": [
     [
       "basic",
@@ -151,7 +151,8 @@
   ],
   "classes": [
     "PRECISION_ATTACK",
-    "TACTICAL_ADVANCE",
+    "SNAP_TURN_LEFT",
+    "SNAP_TURN_RIGHT",
     "TRACKING_FIRE_LEFT",
     "TRACKING_FIRE_RIGHT"
   ],
@@ -161,8 +162,8 @@
   ],
   "seed": 0,
   "alpha": 0.001,
-  "train_accuracy": 0.9967159277504105,
-  "dev_accuracy": 0.994475138121547,
+  "train_accuracy": 0.7185430463576159,
+  "dev_accuracy": 0.8054054054054054,
   "n_features": 6,
   "feature_names": [
     "health",
@@ -179,9 +180,9 @@
     "basic",
     "defend_the_center"
   ],
-  "demonstrator": "scripted+tracking-fire",
+  "demonstrator": "scripted+search",
   "kill_horizon": 10,
   "features": "vision-only",
-  "saved_at": "2026-09-29T21:19:19.022170+00:00",
+  "saved_at": "2026-09-29T21:25:31.095198+00:00",
   "kind": "doom_state_estimator_mlp"
 }

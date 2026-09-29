@@ -234,13 +234,16 @@ demonstrate machinery (plumbing, shapes, invariants), never model capability.
 
 - **Claim:** A compact MLP (32→16, 6 vision-only features) trained on real
   scripted-demonstrator steps (basic + defend_the_center, kill-weighted +
-  class-balanced, split by run) reproduces the demonstrator: train 0.997,
-  held-out-run dev 0.994. Closed-loop on fresh seeds it matches the
-  scripted policy exactly (basic: 2/2 kills, identical action distribution;
-  defend: identical runs) while using VISION observations only. The
-  demonstrator fires while acquiring (tracking-fire on off-center targets);
-  an earlier circle-strafe variant was removed after traces proved it spun
-  away from targets.
+  class-balanced, split by run) reproduces the demonstrator: train 0.719,
+  held-out-run dev 0.805 (vision features lack radar bearing, so some
+  demonstrator decisions are unpredictable from them — reported, not hidden).
+  Closed-loop on fresh seeds: basic 2/2 kills with identical action
+  distributions; defend_the_center 16–19 kills per 2 episodes vs 18–21 for
+  the demonstrator. The demonstrator searches (radar-bearing turns,
+  in-place sweep) instead of blind-advancing, and fires while acquiring.
+  An earlier circle-strafe variant was removed after traces proved it spun
+  away from targets; a wall-hugging advance variant was removed after a
+  100-step wall trace.
 - **Implementation:** `anydecision/games/doom_estimator.py`,
   `PolicyKind.LEARNED` in `vizdoom_env.py`; artifact
   `artifacts/doom_estimator_vision.{npz,json}` (weights + provenance).

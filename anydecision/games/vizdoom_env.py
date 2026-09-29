@@ -371,6 +371,7 @@ def extract_observation(
         "crosshair_locked": target_in_crosshair,
         "target_offset_x": target_offset_x,
         "primary_target": vis_target_name,
+        "step": step,
     }
 
     if mode in (ObservationMode.STATE, ObservationMode.HYBRID):
@@ -444,9 +445,20 @@ def scripted_baseline_action(detail: Dict[str, Any]) -> str:
         return "SNAP_TURN_LEFT"
     if offset > 0:
         return "SNAP_TURN_RIGHT"
-    if detail.get("radar_hostiles"):
+    if detail.get("visible_hostiles"):
+        # Visible but centered and unlocked: settle onto target.
+        return "SNAP_TURN_LEFT"
+    # Nothing visible: use radar bearing when available, else rotate in
+    # place to sweep-scan (never blind-advance into walls). Fixed LEFT keeps
+    # the rule memoryless and clonable; rotation still covers 360 degrees.
+    rel = detail.get("nearest_rel_deg")
+    if rel is not None:
+        if rel > 10.0:
+            return "SNAP_TURN_RIGHT"
+        if rel < -10.0:
+            return "SNAP_TURN_LEFT"
         return "TACTICAL_ADVANCE"
-    return "TACTICAL_ADVANCE"
+    return "SNAP_TURN_LEFT"
 
 
 class ViZDoomDecisionRunner:
