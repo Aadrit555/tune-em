@@ -189,6 +189,57 @@ q5 = Question.choice(
 
 ---
 
+## One Runtime, Any Domain
+
+The game arena below is a showcase, not the product. The same three calls
+cover fraud ops, support routing, triage, moderation, approvals — anything
+with a question and a candidate set. Swap `model="mock"` for any causal LM
+and nothing else changes.
+
+```python
+from anydecision import DecisionEngine, Question
+from anydecision.theory.utility import UtilityMatrix
+
+engine = DecisionEngine(model="mock")  # or "Qwen/Qwen2.5-7B-Instruct", ...
+
+# Fraud ops: block / approve / step-up, with asymmetric costs.
+fraud = engine.decide(
+    Question.choice(" $14,800 transfer to a new overseas account?", ["fraud", "legitimate"]),
+    utility_matrix=UtilityMatrix(
+        actions=["freeze_account", "approve_transfer", "step_up_2fa"],
+        states=["fraud", "legitimate"],
+        matrix={
+            "freeze_account": {"fraud": 20.0, "legitimate": -25.0},
+            "approve_transfer": {"fraud": -200.0, "legitimate": 15.0},
+            "step_up_2fa": {"fraud": 8.0, "legitimate": 6.0},
+        },
+    ),
+)
+print(fraud.selected_action)  # action maximizing expected utility
+
+# Support routing: pick a team, abstain by design when unsure.
+route = engine.choose(
+    "Customer writes: 'My invoice shows two charges for March'",
+    ["billing", "technical", "sales", "general"],
+    level="L1", min_confidence=0.70,
+)
+print(route.answer, "abstained:", route.abstained)  # abstention is a valid output
+
+# Medical triage: ordered severity with calibrated confidence.
+triage = engine.decide(
+    Question.ordinal("Chest pain radiating to left arm. Priority?",
+                     ["non_urgent", "urgent", "emergent", "resuscitation"]),
+    level="L2",  # needs a fitted calibrator; falls back cleanly without one
+)
+print(triage.answer, triage.confidence)
+
+# Content moderation: yes/no with a posterior-risk ceiling.
+mod = engine.decide("Does this post contain threats?", ["yes", "no"], target_error=0.05)
+print(mod.answer, mod.abstained, mod.reason)
+```
+
+---
+
 ## Selective Prediction & Abstention
 
 Avoid costly model hallucinations on ambiguous inputs:
@@ -286,6 +337,9 @@ anydecision demo --port 7860
 
 # 8. Run head-to-head empirical benchmark: anydecision vs von
 anydecision compare-von
+
+# 9. Watch the recordable product showcase (deterministic, mock backend)
+anydecision showcase --fast
 ```
 
 ---
@@ -330,9 +384,12 @@ The following matrix contrasts `anydecision` against `wfzyx/von` (a non-autoregr
 
 ---
 
-## DOOM Evaluation: Synthetic vs Real Engine (Clearly Separated)
+## Showcase Arena: DOOM Evaluation (Validation, Not the Product)
 
-The repository contains two strictly separated things. Synthetic results are
+The product is the universal runtime above — fraud, routing, triage,
+moderation, approvals, anything with a question and candidates. DOOM is the
+fancy showcase: a high-stakes, real-time arena that exercises the same
+`decide → selected_action` loop under uncertainty. Synthetic results are
 never presented alongside live-engine results without labels.
 
 ### Synthetic toy combat (`anydecision doom`) — SYNTHETIC, for tests/CI
