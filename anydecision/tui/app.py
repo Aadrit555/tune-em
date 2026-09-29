@@ -14,40 +14,33 @@ Features:
 from __future__ import annotations
 
 import os
-import sys
 import time
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Dict, List, Optional
 
 from rich.align import Align
-from rich.box import DOUBLE, HEAVY, HORIZONTALS, ROUNDED, SQUARE
+from rich.box import DOUBLE, HEAVY, ROUNDED
 from rich.columns import Columns
 from rich.console import Console
-from rich.layout import Layout
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
+from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.table import Table
 from rich.text import Text
 
 from anydecision import __version__
 from anydecision.adaptive.router import AdaptiveComputeConfig
-from anydecision.calibration.active import ActiveCalibrator, ActiveSelectionCriterion
 from anydecision.calibration.drift import CalibrationDriftMonitor, DriftAlert
-from anydecision.calibration.hierarchical import HierarchicalCalibrator
-from anydecision.calibration.selective_conformal import SelectiveConformalPredictor
 from anydecision.core.context import DecisionContext, InjectionResistanceBenchmark
 from anydecision.core.decision import Decision
 from anydecision.core.engine import DecisionEngine
 from anydecision.core.question import Question
 from anydecision.core.types import DecisionLevel
-from anydecision.evaluation.benchmark import BenchmarkRunner
 from anydecision.evaluation.datasets import (
     create_agent_safety_tasks,
     create_customer_escalation_benchmark,
     create_topic_categorization_benchmark,
 )
 from anydecision.evaluation.economics import DecisionEconomicsEvaluator, EconomicsConfig
-from anydecision.representations.trajectory import LayerTrajectoryAnalyzer
 from anydecision.theory.utility import UtilityMatrix
 
 ASCII_BANNER = r"""

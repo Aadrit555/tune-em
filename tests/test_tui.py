@@ -5,7 +5,6 @@ from __future__ import annotations
 from typer.testing import CliRunner
 
 from anydecision.cli.main import app
-from anydecision.core.engine import DecisionEngine
 from anydecision.core.question import Question
 from anydecision.tui.app import PRESETS, TerminalUI
 
