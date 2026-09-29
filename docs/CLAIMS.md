@@ -232,12 +232,15 @@ demonstrate machinery (plumbing, shapes, invariants), never model capability.
 
 ## 14b. Learned state estimator (TRAINED, vision-only clone parity)
 
-- **Claim:** A compact MLP (32→16, 6 vision-only features) trained on 936
-  real scripted-demonstrator steps (basic + defend_the_center, kill-weighted +
-  class-balanced, split by run) reproduces the demonstrator: train 1.000,
-  held-out-run dev 1.000 (n=107). Closed-loop on fresh seeds it matches the
+- **Claim:** A compact MLP (32→16, 6 vision-only features) trained on real
+  scripted-demonstrator steps (basic + defend_the_center, kill-weighted +
+  class-balanced, split by run) reproduces the demonstrator: train 0.997,
+  held-out-run dev 0.994. Closed-loop on fresh seeds it matches the
   scripted policy exactly (basic: 2/2 kills, identical action distribution;
-  defend: identical 474-decision runs) while using VISION observations only.
+  defend: identical runs) while using VISION observations only. The
+  demonstrator fires while acquiring (tracking-fire on off-center targets);
+  an earlier circle-strafe variant was removed after traces proved it spun
+  away from targets.
 - **Implementation:** `anydecision/games/doom_estimator.py`,
   `PolicyKind.LEARNED` in `vizdoom_env.py`; artifact
   `artifacts/doom_estimator_vision.{npz,json}` (weights + provenance).
