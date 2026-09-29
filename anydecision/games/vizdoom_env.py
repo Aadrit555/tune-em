@@ -452,6 +452,7 @@ class ViZDoomDecisionRunner:
         utility_matrix: Optional[UtilityMatrix] = None,
         record_trajectory: bool = False,
         estimator_path: Optional[str] = None,
+        hold_open: bool = False,
     ) -> ViZDoomScoreReport:
         if not VIZDOOM_AVAILABLE:
             raise ImportError(
@@ -748,6 +749,13 @@ class ViZDoomDecisionRunner:
                     f"reward={ep_reward:.1f}[/bold green]\n"
                 )
 
+        if hold_open and window_visible:
+            try:
+                if console:
+                    console.print("[bold yellow]Holding game window open — press Enter in this terminal to close.[/bold yellow]")
+                input()
+            except (EOFError, KeyboardInterrupt):
+                pass
         game.close()
 
         mean_lat = float(np.mean(all_latencies)) if all_latencies else 0.0

@@ -332,6 +332,7 @@ def vizdoom_cmd(
     observation_mode: str = typer.Option("HYBRID", "--observation-mode", help="Observation mode: STATE, VISION, HYBRID"),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Machine-readable JSON artifact path"),
     estimator: Optional[str] = typer.Option(None, "--estimator", help="State-estimator .npz (learned policy; default: bundled artifact)"),
+    hold_open: bool = typer.Option(False, "--hold-open", help="Keep the game window open after the run (render mode)"),
 ) -> None:
     """Run a typed decision policy inside the live ViZDoom engine (ViZDoom integration)."""
     from anydecision.games.vizdoom_env import ViZDoomDecisionRunner
@@ -350,6 +351,7 @@ def vizdoom_cmd(
         observation_mode=observation_mode,
         output_path=output,
         estimator_path=estimator,
+        hold_open=hold_open,
     )
 
 
