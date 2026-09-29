@@ -238,9 +238,13 @@ demonstrate machinery (plumbing, shapes, invariants), never model capability.
   held-out-run dev 0.805 (vision features lack radar bearing, so some
   demonstrator decisions are unpredictable from them — reported, not hidden).
   Closed-loop on fresh seeds: basic 2/2 kills with identical action
-  distributions;   defend_the_center 16–21 kills per 2 episodes vs 18–21 for
-  the demonstrator (adaptive burst: full 4-tic bursts while ammo is healthy,
-  single shots below 8 rounds; measured burst ladder 1/2/4 tics).
+  distributions;   defend_the_center 12–17 kills per 2 episodes vs 12–16 for
+  the demonstrator on fresh seeds (adaptive burst: full 4-tic bursts while
+  ammo is healthy, single shots below 8 rounds; measured burst ladder
+  1/2/4 tics). Targeting uses a hostile bestiary allowlist after traces
+  proved the old denylist aimed at ammo boxes (ClipBox) and decorations
+  (75 decisions of corpse/box fire in one arena run); unknown labels are
+  reported, never targeted.
   Console ammo cheats were tested (`give bullets`, `give Clip`, …) and are
   blocked by the engine, so no ammo is conjured — longevity comes from
   trigger discipline only. The demonstrator searches (radar-bearing turns,

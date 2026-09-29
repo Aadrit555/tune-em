@@ -298,10 +298,32 @@ def build_tactical_utility_matrix(
     return UtilityMatrix(actions=action_names, states=states, matrix=matrix)
 
 
-_IGNORED_LABELS = {
-    "DoomPlayer", "BulletPuff", "Blood", "TeleportFog", "GreenArmor", "BlueArmor",
-    "Medikit", "Stimpack", "HealthBonus", "ArmorBonus", "Clip", "ShellBox", "RocketBox",
-}
+# Hostile bestiary (Doom actor names that can harm the player). Targeting uses
+# this allowlist: anything else (ammo, weapons, decorations, corpses, puffs)
+# is NEVER aimed at. Unknown labels are reported, not targeted.
+HOSTILE_BESTIARY = frozenset({
+    "Zombieman", "ShotgunGuy", "HeavyWeaponDude", "Imp", "Demon", "Spectre",
+    "LostSoul", "Cacodemon", "HellKnight", "BaronOfHell", "Arachnotron",
+    "PainElemental", "Revenant", "Mancubus", "Archvile", "SpiderMastermind",
+    "Cyberdemon", "WolfensteinSS", "CommanderKeen",
+})
+
+# Known non-hostiles, kept for honest telemetry (visible but never targeted).
+ITEM_DECOR_NAMES = frozenset({
+    "DoomPlayer", "BulletPuff", "Blood", "TeleportFog",
+    "Clip", "ClipBox", "Shell", "ShellBox", "RocketAmmo", "RocketBox",
+    "Cell", "CellPack", "Backpack",
+    "Stimpack", "Medikit", "SoulSphere", "HealthBonus", "ArmorBonus",
+    "GreenArmor", "BlueArmor", "MegaArmor",
+    "Shotgun", "SuperShotgun", "Chaingun", "RocketLauncher", "PlasmaRifle",
+    "BFG9000", "Chainsaw", "MarineChainsawVzd",
+})
+
+
+def _is_hostile_label(name: str) -> bool:
+    if name in ITEM_DECOR_NAMES or name.startswith("Dead"):
+        return False
+    return name in HOSTILE_BESTIARY
 
 
 # Sensor constants (documented, tunable in one place).
@@ -362,11 +384,14 @@ def extract_observation(
     screen_width = game.get_screen_width() or 320
     screen_center = screen_width / 2.0
     detail_screen_width = float(screen_width)
-    vis_monsters = [
-        lbl for lbl in (state.labels or [])
-        if lbl.object_name not in _IGNORED_LABELS
-        and not lbl.object_name.startswith("Dead")
-    ]
+    unknown_labels: List[str] = []
+    vis_monsters = []
+    for lbl in (state.labels or []):
+        if _is_hostile_label(lbl.object_name):
+            vis_monsters.append(lbl)
+        elif lbl.object_name not in ITEM_DECOR_NAMES and not lbl.object_name.startswith("Dead"):
+            if lbl.object_name not in unknown_labels:
+                unknown_labels.append(lbl.object_name)
     target_in_crosshair = False
     target_offset_x = 0.0
     vis_target_name = "none visible"
@@ -384,6 +409,7 @@ def extract_observation(
     detail: Dict[str, Any] = {
         "health": health, "armor": armor, "ammo": ammo,
         "visible_hostiles": len(vis_monsters),
+        "unknown_labels": unknown_labels,
         "crosshair_locked": target_in_crosshair,
         "target_offset_x": target_offset_x,
         "primary_target": vis_target_name,
@@ -398,7 +424,7 @@ def extract_observation(
             if players:
                 player = players[0]
                 for o in state.objects:
-                    if o.name not in _IGNORED_LABELS and not o.name.startswith("Dead") and o.name != "DoomPlayer":
+                    if o.name != "DoomPlayer" and _is_hostile_label(o.name):
                         dx = o.position_x - player.position_x
                         dy = o.position_y - player.position_y
                         dist = math.hypot(dx, dy)
