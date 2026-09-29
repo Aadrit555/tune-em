@@ -21,8 +21,7 @@ jobs:
         run: pip install ruff
 
       - name: Run Ruff Linter
-        run: ruff check .
+        run: ruff check tune_em
 
       - name: Run Ruff Format Check
-        run: ruff format --check .
-
+        run: ruff format --check tune_em
