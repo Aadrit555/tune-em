@@ -130,6 +130,7 @@ class ViZDoomScoreReport(BaseModel):
 
     scenario: str
     victory_criterion: str
+    resolution: str = "1024x768"
     observation_mode: str = "HYBRID"
     policy: str = "anydecision"
     episodes: int = 0
@@ -828,6 +829,7 @@ class ViZDoomDecisionRunner:
         report = ViZDoomScoreReport(
             scenario=scenario,
             victory_criterion=criterion,
+            resolution=f"{game.get_screen_width()}x{game.get_screen_height()}",
             observation_mode=mode.value,
             policy=policy_kind.value,
             episodes=num_episodes,
