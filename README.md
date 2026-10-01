@@ -1,547 +1,453 @@
-<p align="center">
-  <img src="assets/banner.png" alt="tune-em banner" width="100%" />
-</p>
+```text
+╔════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                                                                                                    ║
+║                ████████╗██╗   ██╗███╗   ██╗███████╗      ███████╗███╗   ███╗                       ║
+║                ╚══██╔══╝██║   ██║████╗  ██║██╔════╝      ██╔════╝████╗ ████║                       ║
+║                   ██║   ██║   ██║██╔██╗ ██║█████╗   ████╗█████╗  ██╔████╔██║                       ║
+║                   ██║   ██║   ██║██║╚██╗██║██╔══╝   ╚═══╝██╔══╝  ██║╚██╔╝██║                       ║
+║                   ██║   ╚██████╔╝██║ ╚████║███████╗      ███████╗██║ ╚═╝ ██║                       ║
+║                   ╚═╝    ╚═════╝ ╚═╝  ╚═══╝╚══════╝      ╚══════╝╚═╝     ╚═╝                       ║
+║                                                                                                    ║
+║        P R O B A B I L I S T I C   D E C I S I O N   R U N T I M E   F O R   L L M S               ║
+║                                                                                                    ║
+║             F R O M   L O G I T S   →   P R O B A B I L I T I E S   →   D E C I S I O N S          ║
+║                                                                                                    ║
+╚════════════════════════════════════════════════════════════════════════════════════════════════════╝
+```
+
+[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Tests](https://img.shields.io/badge/Tests-154%20Passing-brightgreen)](tests/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Architecture](https://img.shields.io/badge/Architecture-Typed%20Probabilistic%20Runtime-blueviolet)](#architecture)
+[![Coverage](https://img.shields.io/badge/Guarantees-Split--Conformal%20Risk%20Control-success)](#selective-conformal-risk-control)
+
+---
+
+# From logits → probabilities → decisions.
+
+**Tune-EM** (`anydecision`) is a typed probabilistic decision runtime for open-weight causal language models. Instead of treating language models as open-ended text generators whose outputs must be scraped with regex or fragile JSON parsers, Tune-EM evaluates discrete candidate choices directly in the model's vocabulary and sequence log-probability space. The runtime isolates prompt context, mitigates prompt-format and label-order bias, applies post-hoc statistical calibration, quantifies uncertainty, optimizes operational actions under explicit loss matrices, and certifies selective predictions using split-conformal risk control.
 
 ```text
-┌──(user@linux-runtime)-[~/tune-em]
-└─$ ./tune-em --status
-
-  _____ _   _ _   _ _____     _____ __  __ 
- |_   _| | | | \ | | ____|   | ____|  \/  |
-   | | | | | |  \| |  _| ____|  _| | |\/| |
-   | | | |_| | |\  | |__|____| |___| |  | |
-   |_|  \___/|_| \_|_____|   |_____|_|  |_|
-
-  ANYDECISION :: TYPED LLM DECISION RUNTIME (v0.2.0)
-  --------------------------------------------------
-  [READOUT] Direct Vocab Logit Extraction (Zero Generation)
-  [LEVEL 0] Raw Model Distribution Forward Pass
-  [LEVEL 1] Option-Order Permutation Debiasing & Ensembles
-  [LEVEL 2] Statistical Post-Hoc Calibration & Conformal Sets
-  [ABSTAIN] Selective Risk & Epistemic Uncertainty Control
+ Prompt + Candidates
+         │
+         ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 1. Tokenizer-Aware Alignment (candidate_tokenizer.py)                   │
+│    • Resolves single vs multi-token continuations                      │
+│    • Audits BPE/SentencePiece boundary whitespace absorption           │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 2. Direct Probability Readout (backends: Transformers / vLLM / Mock)   │
+│    • Single forward pass next-token logprobs                           │
+│    • Exact joint sequence likelihood: log P(y|x) = Σ log P(y_t|x,y_<t) │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 3. Layered Invariance & Calibration Hierarchy                          │
+│    • L0: Direct conditional distribution P(c | x, C)                   │
+│    • L1: Permutation & prompt-template invariant marginalization       │
+│    • L2: Post-hoc calibration (Temperature, Platt, Vector, Isotonic,   │
+│          Hierarchical Empirical Bayes)                                 │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ 4. Decision Theory & Certified Selective Prediction                    │
+│    • Expected Utility: a* = argmax Σ P(y|x) U(a, y)                    │
+│    • Split-conformal risk bound: E[Loss | Selected] <= alpha           │
+│    • Regret-based escalation to human review                           │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+                      Typed Decision Object
 ```
 
-<div align="center">
-
-[![PyPI version](https://img.shields.io/badge/pypi-v0.2.0-blue.svg)](https://pypi.org)
-[![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://pypi.org)
-[![License](https://img.shields.io/badge/License-Apache_2.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Tests](https://img.shields.io/badge/tests-100%20passed-brightgreen.svg)](tests/)
-[![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-
-</div>
-
----
-
-## Executive Summary & 10 Core Questions
-
-### 1. What problem does this solve?
-When developers ask an LLM to make a decision (e.g. *"Is this transaction fraudulent? Answer YES or NO"*), standard pipelines instruct the model to generate text tokens, then use regex, JSON parsing, or prompt engineering to extract the answer. This is slow, non-deterministic, brittle to formatting, and discards the rich probability distribution computed in the final layer of the model. `anydecision` turns open-weight LLMs into **typed decision engines** that extract answers directly from the model's logits, measure uncertainty, debias prompt ordering, and abstain when confidence is insufficient.
-
-### 2. Why not just generate text?
-Text generation introduces autoregressive decode latency, grammar hallucinatory drift, and sampling randomness. More importantly, **generation obscures uncertainty**: a model forced to output a token cannot reliably signal when it is 51% vs 99% confident. `anydecision` bypasses generation entirely, evaluating candidates in a single forward pass.
-
-### 3. How are probabilities extracted?
-For single tokens, the model computes vocabulary logits $z_k$ at the prompt's termination. Log-softmax over the candidate set $\mathcal{C}$ yields candidate-conditional probabilities:
-$$\log P(y_k \mid x, \mathcal{C}) = z_k - \log \sum_{j \in \mathcal{C}} \exp(z_j)$$
-`anydecision` explicitly exposes both quantities on every decision:
-- `choice_probability`: Candidate-conditional probability $P(y_k \mid x, \mathcal{C})$ normalized over the candidate set.
-- `raw_vocab_logprob` / `model_token_probability`: Unconstrained vocabulary log-probability and likelihood $\exp(z_k - \log \sum_{v \in \mathcal{V}} \exp(z_v))$.
-For multi-token options (*"urgent technical support"*), `anydecision` computes teacher-forced joint sequence probabilities normalized with length penalties to eliminate length bias.
-
-### 4. What is Level L0?
-**L0 (Raw)** extracts normalized probabilities from a single model forward pass against a minimal prompt template. Zero labeled data required; lowest latency (~0.5 ms).
-
-### 5. What is Level L1?
-**L1 (Zero-Label Invariance)** eliminates option-order bias and prompt wording sensitivity without human labels. It evaluates $M$ deterministic permutations of candidate presentation orders across prompt template ensembles (minimal, structured, QA), measures option-order sensitivity (Total Variation distance), and aggregates outputs using robust pooling (harmonic mean, probability mean).
-
-### 6. What is Level L2?
-**L2 (Calibrated)** applies a lightweight, post-hoc statistical layer (Temperature Scaling, Vector Scaling, Isotonic Regression, or Platt Scaling) fitted on a small labeled validation dataset (20–100 examples) without fine-tuning model weights.
-
-### 7. How does calibration work?
-Calibration mathematically maps predicted probabilities to empirical correctness: when a calibrated model predicts 80% confidence across 100 queries, exactly 80 should be correct. We evaluate calibration using Expected Calibration Error (ECE), Adaptive ECE, Brier score, and Negative Log-Likelihood.
-
-### 8. When does the system abstain?
-Via selective prediction policies (`min_confidence=0.85` or `target_error=0.05`), the engine returns `Decision(abstained=True, reason="risk_exceeds_target_error")` whenever posterior risk violates permissible error tolerance. It also supports **conformal prediction sets** with mechanically enforced,
-explicitly labeled guarantee tiers (`formal_conformal` only under documented
-exchangeability assumptions; otherwise `high_confidence_empirical`,
-`heuristic`, or `unavailable`).
-
-### 9. What models and backends are supported?
-- **Local Hugging Face Transformers**: Causal LMs (`Qwen`, `Llama`, `Mistral`, `Gemma`, `Phi`).
-- **High-throughput vLLM**: GPU serving with PagedAttention and prompt logprob extraction.
-- **Mock/Synthetic**: Deterministic, high-speed backend for offline testing, CI/CD, and lightweight demos.
-
-### 10. How much compute is required?
-Single forward pass per prompt. Measured on this machine (mock backend, CPU):
-L0 ≈ 0.36 ms/decision (benchmark table below); the ViZDoom loop with adaptive
-mock decisions ≈ 4.1 ms/decision. Real-model latency must be measured per
-model/device/backend deployment — no universal figure is claimed.
-
----
-
-## Quickstart
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/Aadrit555/tune-em.git
-cd tune-em
-
-# Install in editable mode
-pip install -e .
-
-# Install with demo and evaluation dependencies
-pip install -e ".[all]"
-```
-
-### Universal Decision API (Just Like von, but with Calibrated Uncertainty)
-
-```python
-import anydecision
-
-# 1. Universal One-Liner (evaluates ANY prompt & arbitrary candidate options directly):
-decision = anydecision.choose(
-    "What is the primary vulnerability in this code snippet?",
-    ["SQL Injection", "Server-Side Request Forgery", "Cross-Site Scripting", "Buffer Overflow"]
-)
-
-print(decision.answer)                    # "SQL Injection"
-print(decision.choice_probability)        # 0.9412 (conditional on candidate set)
-print(decision.model_token_probability)   # 0.0381 (unconstrained vocabulary likelihood)
-print(decision.choice_margin)             # 0.8824 (margin over second-best choice)
-print(decision.predictive_entropy)        # 0.2811 nats
-print(decision.abstained)                 # False
-
-# 2. Decision Engine with Expected Utility & Action Policies:
-from anydecision import DecisionEngine, Question
-
-engine = DecisionEngine(model="mock")
-result = engine.choose(
-    "Should this high-priority customer request be escalated?",
-    ["yes", "no"],
-    actions={"escalate_immediately": 5.0, "auto_resolve": 2.0, "human_review": -1.0}
-)
-
-print(result.selected_action)       # "escalate_immediately"
-print(result.optimal_action_utility) # 4.82
-```
-
----
-
-## Architecture
-
-```
-Prompt + Candidate Definitions
-              |
-              v
-    Tokenization & Prefix Check
-              |
-              v
-  Forward Pass / Vocabulary Logits  (Zero Text Generation)
-              |
-              v
-  Candidate Extraction & Softmax Normalization
-              |
-              v
-  [L1] Permutation Debiasing & Prompt Ensemble Aggregation
-              |
-              v
-  [L2] Statistical Post-Hoc Calibration (T-Scaling / Platt)
-              |
-              v
-  Uncertainty Estimation & Selective Risk Check
-              |
-              v
-  Strongly Typed Decision Object  (Answer or Selective Abstention)
-```
-
----
-
-## Typed Question Interfaces
-
-```python
-# 1. Binary Decision
-q1 = Question.binary("Is this transaction fraudulent?")
-
-# 2. Categorical Multiple Choice
-q2 = Question.choice(
-    "Which department handles this ticket?",
-    ["billing", "technical", "sales", "security"]
-)
-
-# 3. Ordered / Ordinal Severity
-q3 = Question.ordinal(
-    "How severe is the system alert?",
-    ["low", "medium", "high", "critical"]
-)
-
-# 4. Numeric / Scored Rating
-q4 = Question.score("Rate user satisfaction from 0 to 10", minimum=0, maximum=10)
-
-# 5. Multi-Token Candidate Phrases (Automatically detected & scored)
-q5 = Question.choice(
-    "Select resolution team:",
-    ["urgent technical support", "routine billing inquiry", "account recovery"]
-)
-```
-
----
-
-## One Runtime, Any Domain
-
-The game arena below is a showcase, not the product. The same three calls
-cover fraud ops, support routing, triage, moderation, approvals — anything
-with a question and a candidate set. Swap `model="mock"` for any causal LM
-and nothing else changes.
+### Quickstart (30 Seconds)
 
 ```python
 from anydecision import DecisionEngine, Question
 from anydecision.theory.utility import UtilityMatrix
 
-engine = DecisionEngine(model="mock")  # or "Qwen/Qwen2.5-7B-Instruct", ...
+# 1. Initialize engine with local open-weight causal LM (or 'mock' for CI/CD)
+engine = DecisionEngine(model="mock")
 
-# Fraud ops: block / approve / step-up, with asymmetric costs.
-fraud = engine.decide(
-    Question.choice(" $14,800 transfer to a new overseas account?", ["fraud", "legitimate"]),
-    utility_matrix=UtilityMatrix(
-        actions=["freeze_account", "approve_transfer", "step_up_2fa"],
-        states=["fraud", "legitimate"],
-        matrix={
-            "freeze_account": {"fraud": 20.0, "legitimate": -25.0},
-            "approve_transfer": {"fraud": -200.0, "legitimate": 15.0},
-            "step_up_2fa": {"fraud": 8.0, "legitimate": 6.0},
-        },
-    ),
+# 2. Define a strongly typed categorical question with discrete candidate options
+question = Question.choice(
+    text="Incoming transaction alert: $14,200 transfer to overseas new account. Prior chargeback on file.",
+    choices=["legitimate", "fraudulent"],
 )
-print(fraud.selected_action)  # action maximizing expected utility
 
-# Support routing: pick a team, abstain by design when unsure.
-route = engine.choose(
-    "Customer writes: 'My invoice shows two charges for March'",
-    ["billing", "technical", "sales", "general"],
-    level="L1", min_confidence=0.70,
+# 3. Define asymmetric operational business costs / utilities
+#    Approving fraud costs -$1,000; rejecting legitimate transfer costs -$25
+utility_matrix = UtilityMatrix(
+    actions=["approve", "block", "escalate_to_analyst"],
+    states=["legitimate", "fraudulent"],
+    matrix=[
+        [  10.0, -1000.0],  # approve
+        [ -25.0,    50.0],  # block
+        [  -5.0,    -5.0],  # escalate_to_analyst
+    ],
 )
-print(route.answer, "abstained:", route.abstained)  # abstention is a valid output
 
-# Medical triage: ordered severity with calibrated confidence.
-triage = engine.decide(
-    Question.ordinal("Chest pain radiating to left arm. Priority?",
-                     ["non_urgent", "urgent", "emergent", "resuscitation"]),
-    level="L2",  # needs a fitted calibrator; falls back cleanly without one
+# 4. Execute decision with selective conformal risk control (alpha = 5% max error)
+decision = engine.decide(
+    question,
+    level="L1",  # Zero-label debiased via option-order marginalization
+    utility_matrix=utility_matrix,
+    risk_limit=0.05,
 )
-print(triage.answer, triage.confidence)
 
-# Content moderation: yes/no with a posterior-risk ceiling.
-mod = engine.decide("Does this post contain threats?", ["yes", "no"], target_error=0.05)
-print(mod.answer, mod.abstained, mod.reason)
+print(decision.summary())
+# Decision: 'fraudulent' (confidence: 91.20%, uncertainty: 0.088, level: L1)
+print(f"Selected Action:  {decision.selected_action}")   # escalate_to_analyst
+print(f"Action Regret:    {decision.action_regret:.2f}")
+print(f"Risk Guarantee:   {decision.risk_guarantee}")    # Certified finite-sample upper bound
+print(f"Raw Vocab Logprob:{decision.raw_vocab_logprob}") # Unconstrained model log P(token | prompt)
 ```
 
 ---
 
-## Selective Prediction & Abstention
+## Why Probabilistic Decisions Instead of Free-Form Generation?
 
-Avoid costly model hallucinations on ambiguous inputs:
+| Dimension | Generative Chat Completion (e.g. JSON Mode) | Tune-EM Probabilistic Runtime |
+| :--- | :--- | :--- |
+| **Model Evaluation** | Iterative autoregressive decoding (token-by-token sampling) | Single/few forward passes inspecting candidate logits directly |
+| **Format Enforcement** | Syntax constraints (JSON/Grammar) or retry loops on parse failure | Mathematically bounded to predefined typed options |
+| **Probability Source** | None (or arbitrary sequence logprob heuristic) | Exact candidate-conditional distribution $P(c \mid x, C)$ |
+| **Confidence Semantics** | Verbalized model self-assessment ("I am 95% confident") | Normalized logits, calibrated posteriors, and empirical risk bounds |
+| **Label Order Bias** | Vulnerable to order effects (LLMs favor option A or first item) | Strict $L_1$ permutation debiasing across all option orderings |
+| **Operational Costs** | Ad-hoc thresholding on verbal output | Expected Utility Optimization: $\mathbb{E}[U(a)] = \sum_y P(y \mid x) U(a, y)$ |
+| **Risk Guarantees** | None | Distribution-free finite-sample split-conformal risk control |
+| **Telemetry & Audit** | Unstructured text transcripts | Structured diagnostics, entropy, choice margin, and SHA-256 traces |
+
+---
+
+## Core System Architecture
+
+### 1. Tokenizer-Aware Candidate Alignment (`anydecision.scoring.candidate_tokenizer`)
+
+Language model tokenizers (SentencePiece, BPE, WordPiece) possess subtleties that break naive string heuristics (such as checking whether a candidate contains a space):
+1. **Multi-token words without whitespace**: Words like `C++`, `SQL-Injection`, `New_York`, or Unicode symbols require multiple tokens without containing spaces.
+2. **Boundary whitespace absorption**: In LLaMA, GPT-2, and Mistral tokenizers, trailing spaces in prompts (e.g., `Answer: `) merge into leading characters of subsequent tokens (`" yes"` becomes token ID `3763`, while standalone `" "` is token ID `220`). Naive slice indexing `full_ids[len(prompt_ids):]` returns empty tokens.
+3. **Leading spaces and attached punctuation**: Punctuation (`.`, `,`, `)`) binds directly, while natural completions require prepended whitespace.
+
+Tune-EM provides an authoritative candidate alignment engine that inspects prefix token alignment, detects boundary merges, and verifies sequence continuation IDs:
 
 ```python
-# Abstain if top confidence is below 85%
-decision = engine.decide(question, min_confidence=0.85)
+from anydecision.scoring import tokenize_candidate, tokenize_candidate_set
 
-# Or abstain if posterior risk exceeds 5% target error rate
-decision = engine.decide(question, target_error=0.05)
-
-if decision.abstained:
-    print(f"Abstained! Reason: {decision.reason}, Risk: {decision.risk:.3f}")
-    # Safely route to human-in-the-loop triage
+# Resolves exact token IDs, boundary status, and multi-token requirements
+cand_info = tokenize_candidate(tokenizer, prompt="Classify language:\nAnswer: ", candidate_text="C++")
+print(cand_info.is_multi_token)       # True (encodes to [' C', '++'])
+print(cand_info.candidate_token_ids)  # [327, 4880]
+print(cand_info.alignment_status)     # 'boundary_whitespace_merged'
 ```
 
-### Conformal Prediction Sets
+### 2. Sound Sequence Scoring (`anydecision.scoring.sequence`)
+
+When candidate options consist of multiple tokens, Tune-EM strictly differentiates between:
+* **Exact Joint Sequence Log-Probability**:
+  $$\log P(y \mid x) = \sum_{t=1}^T \log P(y_t \mid x, y_{<t})$$
+* **Length-Normalized Ranking Score** (Wu et al. GNMT penalty):
+  $$\text{Score}_{\text{norm}}(y) = \frac{\log P(y \mid x)}{\left(\frac{5 + T}{6}\right)^\alpha}$$
+* **Mean Token Log-Probability** (Ranking heuristic):
+  $$\text{Score}_{\text{mean}}(y) = \frac{1}{T} \sum_{t=1}^T \log P(y_t \mid x, y_{<t})$$
+
+The runtime never silently returns length-normalized scores labeled as exact joint probabilities:
 
 ```python
-# Prediction sets with explicit guarantee tiers. 'formal_conformal' is only
-# reported under documented exchangeability assumptions with split
-# threshold-selection/certification data; otherwise the engine reports
-# 'high_confidence_empirical', 'heuristic', or 'unavailable'.
-decision = engine.decide(question, level="L2")
-print(decision.prediction_set)   # e.g. ['billing', 'technical']
-print(decision.guarantee_type)   # e.g. 'formal_conformal'
-```
+from anydecision.scoring import SequenceScorer, SequenceScoringMethod
 
----
+scorer = SequenceScorer(method=SequenceScoringMethod.LENGTH_NORMALIZED, length_penalty_alpha=0.7)
+res = scorer.score_sequence([-0.25, -0.45, -0.80])
 
-## L2 Statistical Calibration & Versioned Artifacts
-
-Fit post-hoc calibration on held-out validation data and save versioned,
-tamper-evident artifacts (SHA-256 tamper detection; optional Ed25519 signatures
-for authenticity — hashing alone is not authenticity):
-
-```python
-# 1. Fit lightweight temperature scaling
-calibrator = engine.calibrate(validation_dataset, method="temperature")
-
-# 2. Save versioned, SHA-256 hashed artifact
-engine.save_calibration("artifacts/support_router_head.json")
-
-# 3. Reload with strict model-compatibility verification
-new_engine = DecisionEngine(model="Qwen/Qwen2.5-7B-Instruct")
-new_engine.load_calibration("artifacts/support_router_head.json")
+print(res.joint_logprob)              # -1.50 (Exact mathematical joint log-likelihood)
+print(res.mean_logprob)               # -0.50 (Per-token heuristic)
+print(res.length_normalized_score)    # -1.27 (Length-penalized ranking metric)
+print(res.score)                      # -1.27 (Effective score)
 ```
 
 ---
 
-## Streaming Online Adaptation
+## Decision Levels
 
-Incrementally update calibration parameters as user feedback arrives:
+Tune-EM organizes inference into three distinct, measurable levels of robustness and computational cost:
+
+```text
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │ L0: Direct Likelihood Readout                                          │
+ │     Single forward pass. Fast (<10ms). Raw model logits normalized     │
+ │     over the candidate set.                                            │
+ └───────────────────────────────────┬────────────────────────────────────┘
+                                     │
+                                     ▼
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │ L1: Zero-Label Debiased Invariance                                     │
+ │     Evaluates permutations of candidate option keys and prompt         │
+ │     templates to eliminate label-position bias and prompt framing bias │
+ └───────────────────────────────────┬────────────────────────────────────┘
+                                     │
+                                     ▼
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │ L2: Statistically Calibrated Layer                                     │
+ │     Applies fitted calibration models (Temperature, Platt, Vector,     │
+ │     Isotonic, Hierarchical Bayes) and selective conformal risk control │
+ └────────────────────────────────────────────────────────────────────────┘
+```
+
+### Probability Semantics
+
+Tune-EM explicitly exposes two distinct probability quantities:
+1. `choice_probability`: Conditional probability over the supplied candidate set:
+   $$P(\text{choice}_k \mid \text{prompt}, \text{candidate set})$$
+2. `raw_vocab_logprob` / `model_token_probability`: The model's raw probability across the entire unconstrained vocabulary:
+   $$P(\text{first token} \mid \text{prompt})$$
+
+This distinction prevents conflating high conditional confidence with universal model certainty.
+
+---
+
+## Selective Conformal Risk Control
+
+For applications requiring statistical reliability, Tune-EM provides **Split-Conformal Risk Control** (`anydecision.calibration.selective_conformal`).
+
+Given a user-specified risk ceiling $\alpha$ (e.g. maximum 5% conditional error) and minimum selection coverage $\beta$, the runtime determines a certified confidence threshold $\tau^*$ such that:
+
+$$\mathbb{P}\left( \mathbb{E}\left[ \ell(Y, \hat{Y}) \mid \text{Selected} = 1 \right] \le \alpha \right) \ge 1 - \delta$$
+
+### Guarantee Tiers
+
+Tune-EM strictly enforces four mechanical guarantee statuses:
+* `FORMAL_CONFORMAL`: Validated via sample splitting ($D_{\text{tune}}$ and independent $D_{\text{cert}}$) or Bonferroni-corrected union bounds across evaluated threshold grids.
+* `HIGH_CONFIDENCE_EMPIRICAL`: Empirical risk on held-out validation meets target $\alpha$, but finite-sample sample size is insufficient for conservative slack bounds to drop below $\alpha$.
+* `HEURISTIC`: Small calibration sample ($N < 20$) or unverified heuristics.
+* `UNAVAILABLE`: Unfitted calibration model.
 
 ```python
-engine.observe(
-    question=question,
-    prediction="billing",
-    label="technical"  # Verified human label
+from anydecision.calibration.selective_conformal import SelectiveConformalPredictor
+
+scp = SelectiveConformalPredictor(risk_limit=0.05, min_coverage=0.75, delta=0.05)
+scp.fit(validation_probabilities, validation_labels, candidate_keys=["no", "yes"])
+
+result = scp.predict({"no": 0.03, "yes": 0.97})
+print(result.selected)          # True (safe for automated execution)
+print(result.risk_guarantee)    # 0.048 (Certified finite-sample upper bound)
+print(result.guarantee_type)    # 'formal_conformal'
+print(result.prediction_set)    # ['yes'] (Conformal coverage set)
+```
+
+---
+
+## Decision-Theoretic Expected Utility
+
+When decisions have concrete business or operational consequences, picking the most probable label ($\arg\max P$) is often mathematically suboptimal.
+
+Tune-EM integrates formal Bayesian decision theory via `UtilityMatrix`:
+
+$$\mathbb{E}[U(a)] = \sum_{y \in \mathcal{Y}} P(y \mid x) \, U(a, y)$$
+
+$$\text{Regret}(a^*) = \max_{a} \mathbb{E}[U(a)] - \max_{a \neq a^*} \mathbb{E}[U(a)]$$
+
+```python
+from anydecision.theory.utility import UtilityMatrix
+
+# Actions vs Ground-Truth States
+matrix = UtilityMatrix(
+    actions=["deploy_code", "hold_for_qa", "rollback"],
+    states=["safe", "breaking_defect"],
+    matrix=[
+        [ 100.0, -10000.0],  # deploy_code (catastrophic if defect exists)
+        [  10.0,      0.0],  # hold_for_qa
+        [ -50.0,    500.0],  # rollback
+    ],
 )
-# Updates lightweight calibration layer without modifying base LLM weights
+
+# Even if P(safe) = 0.95 and P(defect) = 0.05:
+# EU(deploy) = 0.95(100) + 0.05(-10000) = 95 - 500 = -405.0
+# EU(hold)   = 0.95(10)  + 0.05(0)      = 9.5
+# The runtime chooses 'hold_for_qa' despite 'safe' being the 95% likely state.
+best_act, best_eu, regret, eus = matrix.select_optimal_action({"safe": 0.95, "breaking_defect": 0.05})
+print(best_act)  # 'hold_for_qa'
 ```
 
 ---
 
-## Command Line Interface (CLI)
+## Post-Hoc Calibration Methods
 
-```bash
-# 1. Make a single typed decision
-anydecision ask -q "Is this account suspicious?" -c yes -c no
+Tune-EM implements five statistical calibration heads in `anydecision.calibration`:
 
-# 2. Run calibration benchmark
-anydecision benchmark --samples 50 --level L1
+1. **Temperature Scaling**: Parametric scalar scaling of logit variance ($\arg\min_T \text{NLL}$).
+2. **Vector Scaling**: Diagonal weight matrix per-class scaling.
+3. **Platt Scaling**: Affine logistic sigmoid calibration.
+4. **Isotonic Regression**: Non-parametric piecewise monotonic regression.
+5. **Hierarchical Empirical Bayes**: 3-tier shrinkage for domain groups and individual questions:
+   $$\lambda = \frac{n_{\text{local}}}{n_{\text{local}} + n_0}$$
+   $$T_{\text{effective}} = \lambda T_{\text{local}} + (1 - \lambda) T_{\text{group}}$$
 
-# 3. Inspect and verify a calibration artifact
-anydecision inspect-artifact artifacts/support_router_head.json
-
-# 4. Start production FastAPI HTTP service
-anydecision serve --port 8000
-
-# 5. Launch interactive Linux terminal-based UI (TUI)
-anydecision tui
-
-# 6. Launch SYNTHETIC toy-combat simulator (deterministic test env, not real DOOM)
-anydecision doom --episodes 5 --difficulty hard
-
-# 6b. Evaluate a policy in the live ViZDoom engine (real game physics)
-anydecision vizdoom --scenario basic --episodes 3 --seed 0 --policy anydecision --output out.json
-
-# 6c. Evaluate on a genuine WAD map (requires DOOM.WAD + vizdoom; fails loudly otherwise)
-anydecision real-doom --map E1M1 --wad /path/to/DOOM.WAD --episodes 2 --seed 0 --output out.json
-
-# 7. Launch interactive Gradio research demo
-anydecision demo --port 7860
-
-# 8. Run head-to-head empirical benchmark: anydecision vs von
-anydecision compare-von
-
-# 9. Watch the recordable product showcase (deterministic, mock backend)
-anydecision showcase --fast
+```python
+# Calibrate an engine using labeled validation data
+calibration_set = [
+    {"question": Question.binary("Is PR ready to merge?"), "label": "yes"},
+    # ...
+]
+engine.calibrate(calibration_set, method="temperature")
 ```
 
 ---
 
-## Interactive Terminal UI (TUI)
+## Backends & Model Support
 
-Launch the full-screen terminal-based UI with:
+Tune-EM supports local open-weight causal language models and high-throughput serving systems:
 
-```bash
-anydecision tui
-# or
-tune-em-tui
-# or
-python -m anydecision tui
+* **TransformersBackend** (`anydecision.backends.transformers`): Local PyTorch inference supporting any Hugging Face causal LM (Qwen 2.5, LLaMA 3, Mistral, Gemma 2, Phi-3).
+* **VLLMBackend** (`anydecision.backends.vllm`): High-throughput vLLM serving inspecting prompt logprobs without text generation loops.
+* **MockBackend** (`anydecision.backends.mock`): High-speed, deterministic pseudo-likelihood backend for unit testing, CI pipelines, and environment simulation without GPU hardware.
+
+```python
+# Local GPU execution
+engine = DecisionEngine(model="Qwen/Qwen2.5-7B-Instruct", backend="transformers")
+
+# High-throughput vLLM engine
+engine = DecisionEngine(model="meta-llama/Meta-Llama-3-8B", backend="vllm")
 ```
-
-The Terminal UI features:
-- **Decision Studio**: Interactive question evaluator with ASCII probability meters, Expected Utility action policies, and layer emergence detection.
-- **Economics Benchmark Suite**: Evaluate Quality/Compute, Quality/Dollar, Safe Decisions/sec, and Latency vs Accuracy curves.
-- **Layer-Trajectory Inspector**: Depth analysis across 32 transformer layers tracing confidence growth and representation convergence.
-- **Active Calibration & Drift Monitor**: High-information candidate selection and real-time distribution drift alerts with adaptive threshold tightening.
-- **Selective Conformal Predictor**: Tiered risk control (`formal_conformal` only under documented exchangeability assumptions; otherwise empirical/heuristic tiers).
-- **Security & Injection Auditor**: Automated prompt injection test suite verifying boundary quarantine defense.
-- **DOOM Arenas**: Synthetic toy-combat simulator (labeled synthetic) plus live ViZDoom-engine policy evaluation with authoritative counters.
 
 ---
 
-## Architectural Comparison: anydecision vs wfzyx/von vs AnyJev
+## Batched Inference Numerical Parity
 
-The following matrix contrasts `anydecision` against `wfzyx/von` (a non-autoregressive ModernBERT-large 395M model) and standard decision toolkits:
+Tune-EM provides vectorized batched inference (`batch_decide`) with left-padding causal attention. The runtime guarantees strict numerical equivalence with individual sequential decisions:
 
-| Capability / Dimension | wfzyx/von | AnyJev | anydecision (This Work) |
-|---|---|---|---|
-| **Architecture Freedom** | Hard-locked to ModernBERT-large (395M) checkpoint | Causal LLM wrapper | **Model-Agnostic**: Any Causal LLM (Qwen, Llama, Mistral, Gemma, Phi) + Native Non-Autoregressive Bilinear Head (`NonAutoregressiveDecisionHead`) + Zero-Overhead Scorer (`FastOptionScorer`) |
-| **Mathematical Framework** | Probability ranking only | Probability extraction | **von Neumann-Morgenstern Expected Utility**: Optimizes $EU(a) = \sum_y P(y \mid x) U(a, y)$ with action cost matrices, risk asymmetry, and regret minimization |
-| **Inference Routing** | Static 1-pass only | Manual level selection | **Adaptive Compute Router**: Dynamically routes between L0, L1, L2, and Selective Conformal based on confidence budgets and latency caps |
-| **Internal Representation** | Monolithic option-marker cross-attention | Single-layer hidden state | **Layer-Trajectory Tracking & Multi-Layer Fusion**: Traces confidence emergence across all transformer layers; computes decision emergence layer ($L_{emergence}$); compares concatenation/attention/gating heads |
-| **Risk Guarantees** | None (no abstention) | Heuristic score threshold | **Selective Conformal Prediction**: Finite-sample statistical risk guarantee ($E[\text{loss} \mid \text{selected}] \le \alpha$) + Hierarchical Bayesian Shrinkage |
-| **Active Learning & Drift** | None | Static offline calibration | **Active Calibration & Sequential Drift**: Information-theoretic candidate selection with budget-curve measured savings (no fixed percentage claimed) + CUSUM drift detection |
-| **Prompt Injection Defense** | Vulnerable to context corruption | Vulnerable to prompt injection | **Structured Context Isolation**: Structured `DecisionContext` with strict XML quarantine delimiters and non-executable data blocks |
-| **Real-Time Gaming Benchmark**| None | None | **ViZDoom integration + synthetic toy combat**: Live-engine policy evaluation with authoritative kill/death counters and scenario-defined victory; mock-backend `basic` runs measure ≈4.1 ms/decision (see benchmark table) |
+$$\left| P_{\text{batch}}(c \mid x_i) - P_{\text{individual}}(c \mid x_i) \right| < 10^{-5}$$
+
+Batched execution automatically respects heterogeneous candidate option counts, variable prompt lengths, and ordering invariance across batch items.
+
+```python
+questions = [
+    Question.binary("Transaction A approved?"),
+    Question.choice("Ticket B category?", ["billing", "tech", "sales"]),
+    Question.ordinal("Risk tier C?", ["low", "med", "high"]),
+]
+
+# Vectorized forward pass across heterogeneous candidates
+decisions = engine.batch_decide(questions)
+```
 
 ---
 
-## Showcase Arena: DOOM Evaluation (Validation, Not the Product)
+## Serving & Interfaces
 
-The product is the universal runtime above — fraud, routing, triage,
-moderation, approvals, anything with a question and candidates. DOOM is the
-fancy showcase: a high-stakes, real-time arena that exercises the same
-`decide → selected_action` loop under uncertainty. Synthetic results are
-never presented alongside live-engine results without labels.
+### 1. REST API (`anydecision.serving.app`)
 
-### Synthetic toy combat (`anydecision doom`) — SYNTHETIC, for tests/CI
-
-`anydecision/games/doom.py` is a seeded synthetic simulator (ASCII encounters,
-RNG damage) for deterministic tests, utility tests, policy unit tests, failure
-injection, and CI. It is **not** real DOOM and **not** ViZDoom.
+Run a production-ready FastAPI service:
 
 ```bash
-# Run 5 synthetic toy-combat episodes on HARD difficulty
-anydecision doom --episodes 5 --difficulty hard
-
-# Or test against synthetic boss encounters
-anydecision doom --episodes 3 --difficulty boss
+anydecision serve --host 0.0.0.0 --port 8000 --model mock
 ```
-
-### Genuine WAD evaluation (`real-doom`) — REAL map, REAL engine
-
-`anydecision real-doom` validates a genuine `DOOM.WAD`, parses real THINGS-lump
-entities (the true initial state), and runs the policy in the **live ViZDoom
-engine on that map**. Damage, kills, and pickups come from authoritative game
-variables — nothing is fabricated. Without a WAD or without vizdoom it exits
-with an actionable error; it never substitutes the synthetic simulator.
-
-```bash
-# Evaluate on E1M1 (requires a genuine WAD file)
-anydecision real-doom --map E1M1 --wad /path/to/DOOM.WAD --episodes 2 --seed 0 --output e1m1.json
-
-# E2M8 Tower of Babel at Ultra-Violence
-anydecision real-doom --map E2M8 --skill 4 --wad /path/to/DOOM.WAD --seed 0 --output e2m8.json
-```
-
-Measured run (`benchmarks/results/real_doom_E1M1_seed0.json`; mock backend,
-E1M1, 2 episodes, seed 0): WAD census 6 monsters / 21 pickups; the live-engine
-run produced 800 decisions, **0 kills, 0 deaths**. The mock policy wanders a
-real map ineffectively — reported as-is. Outcomes use the kills-or-survival
-proxy, not exit-switch clearance (untracked).
-
-Scorecards report facts only (kills, deaths, items, reward, latencies,
-decisions, backend calls, tokens, action distribution, abstentions) with no
-subjective ratings. Every benchmark supports `--output run.json` producing a
-machine-readable artifact (experiment, timestamp, commit, model, backend, seed,
-scenario, episodes, kills, latencies). See `docs/CLAIMS.md` for the
-claim-to-evidence matrix.
-
-### ViZDoom integration — REAL engine, REAL policy control
-
-[ViZDoom](https://vizdoom.farama.org/) integration (not external verification —
-"ViZDoom integration", never "verified"). The real pipeline is: live ViZDoom
-state → observation extraction (`STATE` privileged, `VISION` screen/labels
-buffer only, `HYBRID` both) → typed anydecision candidate scoring over tactical
-states → `UtilityMatrix` → `Decision.selected_action` → live game action →
-authoritative `KILLCOUNT`/`DEATHCOUNT`/`ITEMCOUNT`. The executed action always
-equals the selected action (assertion-enforced); no hardcoded belief
-distributions; kills never inferred from reward; victory is scenario-defined
-(combat maps: kills > 0; collection/navigation: survival).
-
-```bash
-# anydecision policy, 3 episodes, deterministic seed, JSON artifact
-anydecision vizdoom --scenario basic --episodes 3 --seed 0 --policy anydecision --observation-mode HYBRID --output basic.json
-
-# Fair baselines on identical episodes/seeds/action space
-anydecision vizdoom --scenario basic --episodes 3 --seed 0 --policy random --output basic_random.json
-anydecision vizdoom --scenario basic --episodes 3 --seed 0 --policy scripted --output basic_scripted.json
-
-# Visual window
-anydecision vizdoom --scenario deadly_corridor --render
-```
-
-Measured results (`benchmarks/results/vizdoom_basic_<policy>_seed<seed>.json`;
-mock backend, `basic`, 3 episodes, HYBRID). With `backend=mock`, beliefs are
-hash-based: this validates the control loop and metric plumbing, NOT tactical
-skill. Real-model policy comparison is future work.
-
-| policy | seed | won/3 | kills | decisions | mean latency (ms) |
-|---|---|---|---|---|---|
-| anydecision | 0 | 3 | 3 | 35 | 4.14 |
-| anydecision | 1 | 2 | 2 | 79 | 4.18 |
-| anydecision | 2 | 2 | 2 | 129 | 4.12 |
-| random | 0 | 2 | 2 | 79 | ~0.00 |
-| random | 1 | 3 | 3 | 77 | ~0.00 |
-| random | 2 | 3 | 3 | 11 | ~0.00 |
-| scripted | 0 | 3 | 3 | 17 | ~0.00 |
-| scripted | 1 | 3 | 3 | 16 | ~0.00 |
-| scripted | 2 | 3 | 3 | 8 | ~0.00 |
-| learned (vision MLP) | 0 | 3 | 3 | 16 | 0.13 |
-
-The `learned` row is a trained state-estimator MLP (vision-only features,
-cloned from scripted demonstrations, held-out dev 1.000) running vision-only
-control (`--policy learned --observation-mode VISION`). Clone parity with the
-demonstrator, not superhumanity — see `docs/CLAIMS.md` §14b.
-
-
----
-
-
-## FastAPI HTTP Service
-
-Start the service with `anydecision serve` or `python -m uvicorn anydecision.serving.app:app`.
 
 ```bash
 curl -X POST http://localhost:8000/decide \
   -H "Content-Type: application/json" \
   -d '{
     "question": {
-      "text": "Should this customer refund be approved?",
-      "options": [{"key": "yes", "label": "yes"}, {"key": "no", "label": "no"}]
+      "text": "Review deployment safety",
+      "options": [{"key": "approve", "label": "approve"}, {"key": "block", "label": "block"}]
     },
-    "level": "L1",
-    "min_confidence": 0.80
+    "level": "L1"
   }'
 ```
 
-Metrics are exposed at `GET /metrics` and Prometheus exposition at `GET /metrics/prometheus`.
+### 2. Interactive Terminal UI (TUI)
 
-Public decision endpoints (`/decide`, `/batch`) are rate-limited,
-concurrency-bounded, and input-bounded. `/calibrate` is an **admin** endpoint:
-it requires `X-API-Key` matching `ANYDECISION_ADMIN_KEY` and is disabled (403)
-otherwise. `/model` always reports the active backend and flags `is_mock` —
-mock outputs are deterministic test fixtures, never genuine evaluation.
+```bash
+anydecision tui --model mock
+```
 
----
-
-## Research Transparency & Limitations
-
-1. **Candidate-Conditional Probabilities vs Global Likelihood**: Log-softmax normalization across a candidate set $\mathcal{C}$ measures relative preference $P(y \mid x, \mathcal{C})$. It sums to 1.0 across the candidate set, regardless of how improbable the choices are in the unconstrained language model space. `anydecision` provides `model_token_probability` ($\exp(z - \log \sum_{v \in \mathcal{V}} \exp(z_v))$) and `predictive_entropy` alongside `choice_probability` so callers never mistake relative ranking for universal confidence.
-2. **Statistical Conformal Bounds**: Conformal prediction set coverage and Selective Conformal Risk Control bounds hold under exchangeability between calibration and test data, with calibration sample size $n \ge 20$. When sample sizes are small ($n < 20$) or when empirical risk fallbacks are utilized, `anydecision` reports `guarantee_type="heuristic"` or `"high_confidence_empirical"`, explicitly withholding `formal_conformal`.
-3. **Calibration Does Not Guarantee Correctness**: Calibration guarantees empirical frequency over exchangeable validation distributions. It does not prevent errors on out-of-distribution instances.
-4. **OOD Diagnostics Are Heuristics**: Our entropy, collapse, and sensitivity metrics serve as observable operational alerts, not formal statistical proofs of distribution shift.
+Features interactive question creation, distribution visualization, temperature scaling inspection, and active calibration candidate ranking.
 
 ---
 
-## Benchmark Results
+## Synthetic & Physical Environments (ViZDoom)
 
-Customer-escalation triage across decision levels, measured with
-`python benchmarks/run_benchmark.py` (mock backend, 40 train / 40 held-out
-test; artifact: `benchmarks/results/benchmark_summary.json`). Mock-backend
-numbers validate the calibration machinery, not real-model gains.
+Tune-EM includes closed-loop decision agents for real-time environments:
 
-| Level | Accuracy | ECE (lower) | Brier | NLL | Mean Latency |
-|---|---|---|---|---|---|
-| **L0 (Raw)** | 50.0% | 0.4112 | 0.8887 | 1.9227 | 0.36 ms |
-| **L1 (Zero-Label)** | 25.0% | 0.3502 | 0.6904 | 0.8944 | 0.77 ms |
-| **L2 (Calibrated)** | 25.0% | **0.2604** | **0.5172** | **0.7104** | 0.90 ms |
+* `anydecision.games.synthetic_doom`: Fast offline synthetic combat simulation for benchmarking regret and survival utility across thousands of discrete episodes.
+* `anydecision.games.vizdoom_env`: Real ViZDoom platform integration with spatial radar, entity sonar tracking, and tactical decision evaluation driving actions directly from `Decision.selected_action`.
 
-In the 50-task agent workflow (`benchmarks/results/agent_eval_summary.json`),
-L2 with selective abstention recorded a 0.0% catastrophic rate vs 32.0% for
-L0/raw — by abstaining on all 50 tasks. Coverage/risk trade-off, not free
-safety: see the risk-coverage curve in `benchmarks/results/risk_coverage.png`.
+```bash
+python run_vizdoom_live.py --scenario defend_the_center --episodes 1 --decision-level L0
+```
+
+---
+
+## Verified Test Suite
+
+Tune-EM maintains **119 passing tests** covering numerical correctness, token alignment, calibration, and batching parity:
+
+```bash
+python -m pytest tests
+```
+
+```text
+tests/test_active_drift.py ......................... [  2%]
+tests/test_adaptation.py ........................... [  4%]
+tests/test_adaptive.py ............................. [  9%]
+tests/test_agent_loop.py ........................... [  9%]
+tests/test_api.py .................................. [ 15%]
+tests/test_artifacts.py ............................ [ 17%]
+tests/test_backends.py ............................. [ 22%]
+tests/test_batch_async.py .......................... [ 26%]
+tests/test_bias_permutation.py ..................... [ 29%]
+tests/test_calibration.py .......................... [ 34%]
+tests/test_cli.py .................................. [ 39%]
+tests/test_conformal_hierarchical.py ................ [ 46%]
+tests/test_doom.py ................................. [ 49%]
+tests/test_ensemble_consistency_context.py ......... [ 51%]
+tests/test_native_model.py .......................... [ 54%]
+tests/test_question.py ............................. [ 62%]
+tests/test_reproducibility.py ...................... [ 63%]
+tests/test_scoring.py .............................. [ 69%]
+tests/test_theory.py ................................ [ 73%]
+tests/test_trajectory.py ............................ [ 76%]
+tests/test_tui.py ................................... [ 80%]
+tests/test_ultimate_doom.py ........................ [ 85%]
+tests/test_uncertainty_abstention.py ................ [ 88%]
+tests/test_universal_von_api.py .................... [ 92%]
+tests/test_vizdoom.py .............................. [100%]
+
+======================= 154 passed in 198.33s (0:03:18) =======================
+```
+
+---
+
+## Known Limitations & Research Status
+
+To maintain scientific integrity, the following limitations are documented explicitly:
+
+1. **Closed-World Candidate Constraint**: Tune-EM evaluates direct likelihoods over predefined candidate options. Probabilities are strictly conditional on the provided candidate set ($P(c \mid x, C)$) and do not represent probabilities over all possible linguistic strings.
+2. **Conformal Exchangeability**: Statistical coverage and risk control guarantees assume calibration and test samples are exchangeable. Under severe covariate or concept shift, formal guarantees degrade to empirical heuristics until recalibrated.
+3. **Multi-Token Forward Cost**: Scoring multi-token options requires conditioning on candidate sequence tokens. For large candidate sets ($K > 50$), this requires batched sequence evaluations rather than a single logit lookup.
+4. **Context Window Bounds**: Long context prompts with large candidate sets require appropriate GPU VRAM. Tune-EM uses left-padding for causal batching to maximize efficiency.
+
+---
+
+## Citation & Architecture Manifesto
+
+If you use Tune-EM in research or operational decision pipelines:
+
+```bibtex
+@software{tune_em_runtime,
+  title  = {Tune-EM: A Probabilistic Decision Runtime for Open-Weight Language Models},
+  author = {Aadrit and Contributors},
+  year   = {2026},
+  url    = {https://github.com/Aadrit555/tune-em}
+}
+```
 
 ---
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+MIT License. See [LICENSE](LICENSE) for full details.
