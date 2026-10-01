@@ -21,6 +21,10 @@
 [![Architecture](https://img.shields.io/badge/Architecture-Typed%20Probabilistic%20Runtime-blueviolet)](#architecture)
 [![Coverage](https://img.shields.io/badge/Guarantees-Split--Conformal%20Risk%20Control-success)](#selective-conformal-risk-control)
 
+<p align="center">
+  <img src="assets/mimir_decision.jpg" alt="Tune-EM: Probabilistic Decision Runtime" width="100%" />
+</p>
+
 ---
 
 # From logits → probabilities → decisions.
